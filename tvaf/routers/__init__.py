@@ -10,11 +10,3 @@
 # LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
-
-import fastapi
-
-import tvaf.routers.data as data_router
-
-app = fastapi.FastAPI()
-
-app.include_router(data_router.router)
