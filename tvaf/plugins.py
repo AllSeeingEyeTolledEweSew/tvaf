@@ -42,8 +42,7 @@ def get_entry_points(group_name: str) -> Iterable[Any]:
         name_to_entry_points[entry_point.name].append(entry_point)
     entry_points: List[importlib_metadata.EntryPoint] = []
     for _, values in sorted(name_to_entry_points.items()):
-        values = sorted(values, key=_entry_point_key)
-        entry_points.append(values[-1])
+        entry_points.extend(values)
     return entry_points
 
 
@@ -57,7 +56,7 @@ _C = TypeVar("_C", bound=Callable[..., Any])
 
 @lifecycle.lru_cache()
 def get_plugins_for_func(func: _C) -> Iterable[_C]:
-    group_name = f"{func.__module__}.{func.__qualname__}"
+    group_name = f"{func.__module__}:{func.__qualname__}"
     return get_plugins(group_name)
 
 
