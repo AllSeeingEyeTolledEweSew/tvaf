@@ -122,7 +122,10 @@ def get_parsed_info_default(btmh: multihash.Multihash) -> Dict[bytes, Any]:
 
 @lifecycle.lru_cache()
 def _get_ti(btmh: multihash.Multihash) -> lt.torrent_info:
-    handle = services.get_session().find_torrent(btmh)
+    if btmh.func != multihash.Func.sha1:
+        raise plugins.Pass()
+    sha1_hash = lt.sha1_hash(btmh.digest)
+    handle = services.get_session().find_torrent(sha1_hash)
     if not handle.is_valid():
         raise plugins.Pass()
     try:

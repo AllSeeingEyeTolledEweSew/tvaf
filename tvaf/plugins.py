@@ -56,7 +56,7 @@ _C = TypeVar("_C", bound=Callable[..., Any])
 
 @lifecycle.lru_cache()
 def get_plugins_for_func(func: _C) -> Iterable[_C]:
-    group_name = f"{func.__module__}:{func.__qualname__}"
+    group_name = f"{func.__module__}.{func.__qualname__}"
     return get_plugins(group_name)
 
 

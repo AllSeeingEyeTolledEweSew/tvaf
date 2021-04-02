@@ -21,6 +21,7 @@ from typing import Type
 from typing import TypeVar
 
 import libtorrent as lt
+import multihash
 from typing_extensions import TypedDict
 
 from tvaf import protocol
@@ -206,6 +207,10 @@ class Torrent:
     @property
     def sha1_hash(self) -> lt.sha1_hash:
         return lt.sha1_hash(self.info_hash_bytes)
+
+    @property
+    def btmh(self) -> multihash.Multihash:
+        return multihash.Multihash(multihash.Func.sha1, self.info_hash_bytes)
 
     def torrent_info(self) -> lt.torrent_info:
         return lt.torrent_info(self.dict)

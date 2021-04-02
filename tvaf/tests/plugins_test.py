@@ -61,7 +61,7 @@ class EntryPointMockerTest(unittest.TestCase):
         if not isinstance(value, str):
             value = f"{value.__module__}:{value.__qualname__}"
         if not isinstance(group, str):
-            group = f"{group.__module__}:{group.__qualname__}"
+            group = f"{group.__module__}.{group.__qualname__}"
         entry = importlib_metadata.EntryPoint(
             name=name, value=value, group=group
         )
