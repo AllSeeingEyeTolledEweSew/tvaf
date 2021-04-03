@@ -1,4 +1,5 @@
 import datetime
+import typing
 from typing import Any
 from typing import Callable
 from typing import Dict
@@ -9,7 +10,7 @@ from typing import Optional
 from typing import overload
 from typing import Tuple
 from typing import Union
-import typing
+
 from typing_extensions import TypedDict
 
 _ConvertsToString = Union[str, bytes]
