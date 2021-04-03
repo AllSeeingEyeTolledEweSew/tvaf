@@ -13,15 +13,11 @@
 
 
 import collections
-import functools
 import sys
 from typing import Any
-from typing import Callable
-from typing import cast
 from typing import Iterable
 from typing import List
 from typing import Tuple
-from typing import TypeVar
 
 from tvaf import lifecycle
 
@@ -47,34 +43,18 @@ def get_entry_points(group_name: str) -> Iterable[Any]:
 
 
 @lifecycle.lru_cache()
-def get_plugins(group_name: str) -> Iterable[Any]:
+def load_entry_points(group_name: str) -> Iterable[Any]:
     return [entry.load() for entry in get_entry_points(group_name)]
-
-
-_C = TypeVar("_C", bound=Callable[..., Any])
-
-
-@lifecycle.lru_cache()
-def get_plugins_for_func(func: _C) -> Iterable[_C]:
-    group_name = f"{func.__module__}.{func.__qualname__}"
-    return get_plugins(group_name)
 
 
 class Pass(Exception):
     pass
 
 
-def dispatch() -> Callable[[_C], _C]:
-    def wrapper(func: _C) -> _C:
-        @functools.wraps(func)
-        def call_first(*args: Any, **kwargs: Any) -> Any:
-            for plugin in get_plugins_for_func(func):
-                try:
-                    return plugin(*args, **kwargs)
-                except Pass:
-                    pass
-            raise Pass()
-
-        return cast(_C, call_first)
-
-    return wrapper
+def call_first(group_name: str, *args: Any, **kwargs: Any) -> Any:
+    for plugin in load_entry_points(group_name):
+        try:
+            return plugin(*args, **kwargs)
+        except Pass:
+            pass
+    raise Pass()

@@ -37,11 +37,6 @@ def raise_pass() -> str:
     raise plugins.Pass()
 
 
-@plugins.dispatch()
-def dispatch_first() -> None:
-    return None
-
-
 # There doesn't seem to be an API to add new distributions or create
 # sys.meta_path finders to return fake distributions. Instead we patch out
 # importlib.metadata.entry_points().
@@ -96,48 +91,35 @@ class GetEntryPointsTest(EntryPointMockerTest):
         self.assertEqual(list(plugins.get_entry_points("does_not_exist")), [])
 
 
-class GetPluginsTest(EntryPointMockerTest):
+class LoadEntryPointsTest(EntryPointMockerTest):
     def setUp(self) -> None:
         super().setUp()
         self.add_entry("a", return_a, "test")
         self.add_entry("b", return_b, "test")
 
     def test_get_plugins(self) -> None:
-        plugin_list = plugins.get_plugins("test")
+        plugin_list = plugins.load_entry_points("test")
         values = [plugin() for plugin in plugin_list]
         self.assertEqual(values, ["a", "b"])
 
 
-class GetPluginsForFuncTest(EntryPointMockerTest):
-    def setUp(self) -> None:
-        super().setUp()
-        self.add_entry("a", return_a, dispatch_first)
-        self.add_entry("b", return_b, dispatch_first)
-
-    def test_get_plugins(self) -> None:
-        plugin_list = list(plugins.get_plugins_for_func(dispatch_first))
-        self.assertEqual(plugin_list, [return_a, return_b])
-        values = [plugin() for plugin in plugin_list]
-        self.assertEqual(values, ["a", "b"])
-
-
-class DispatchFirstTest(EntryPointMockerTest):
+class CallFirstTest(EntryPointMockerTest):
     def test_last_returns(self) -> None:
-        self.add_entry("a", raise_pass, dispatch_first)
-        self.add_entry("b", return_a, dispatch_first)
-        self.assertEqual(dispatch_first(), "a")
+        self.add_entry("a", raise_pass, "test")
+        self.add_entry("b", return_a, "test")
+        self.assertEqual(plugins.call_first("test"), "a")
 
     def test_first_returns(self) -> None:
-        self.add_entry("a", return_a, dispatch_first)
-        self.add_entry("b", raise_pass, dispatch_first)
-        self.assertEqual(dispatch_first(), "a")
+        self.add_entry("a", return_a, "test")
+        self.add_entry("b", raise_pass, "test")
+        self.assertEqual(plugins.call_first("test"), "a")
 
     def test_all_raise_pass(self) -> None:
-        self.add_entry("a", raise_pass, dispatch_first)
-        self.add_entry("b", raise_pass, dispatch_first)
+        self.add_entry("a", raise_pass, "test")
+        self.add_entry("b", raise_pass, "test")
         with self.assertRaises(plugins.Pass):
-            dispatch_first()
+            plugins.call_first("test")
 
     def test_empty(self) -> None:
         with self.assertRaises(plugins.Pass):
-            dispatch_first()
+            plugins.call_first("test")

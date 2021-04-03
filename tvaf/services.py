@@ -29,19 +29,19 @@ from tvaf import session as session_lib
 
 
 def startup() -> None:
-    for func in plugins.get_plugins_for_func(startup):
+    for func in plugins.load_entry_points("tvaf.services.startup"):
         func()
 
 
 def shutdown() -> None:
-    for func in plugins.get_plugins_for_func(shutdown):
+    for func in plugins.load_entry_points("tvaf.services.shutdown"):
         func()
 
 
 @contextlib.contextmanager
 def stage_config(config: config_lib.Config) -> Iterator[None]:
     with contextlib.ExitStack() as stack:
-        for func in plugins.get_plugins_for_func(stage_config):
+        for func in plugins.load_entry_points("tvaf.services.stage_config"):
             stack.enter_context(func(config))
         yield
 

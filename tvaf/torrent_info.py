@@ -46,56 +46,73 @@ from tvaf.types import ConfigureATP
 
 
 @lifecycle.lru_cache()
-@plugins.dispatch()
 def get_num_files(btmh: multihash.Multihash) -> int:
-    ...
+    return cast(
+        int, plugins.call_first("tvaf.torrent_info.get_num_files", btmh)
+    )
 
 
 @lifecycle.lru_cache()
-@plugins.dispatch()
 def check_file_index(btmh: multihash.Multihash, file_index: int) -> None:
-    ...
+    plugins.call_first("tvaf.torrent_info.check_file_index", btmh, file_index)
 
 
 @lifecycle.lru_cache()
-@plugins.dispatch()
 def get_file_bounds(
     btmh: multihash.Multihash, file_index: int
 ) -> Tuple[int, int]:
-    ...
+    return cast(
+        Tuple[int, int],
+        plugins.call_first(
+            "tvaf.torrent_info.get_file_bounds", btmh, file_index
+        ),
+    )
 
 
 @lifecycle.lru_cache()
-@plugins.dispatch()
 def get_file_path(
     btmh: multihash.Multihash, file_index: int
 ) -> List[Union[str, bytes]]:
-    ...
+    return cast(
+        List[Union[str, bytes]],
+        plugins.call_first(
+            "tvaf.torrent_info.get_file_path", btmh, file_index
+        ),
+    )
 
 
 @lifecycle.lru_cache()
-@plugins.dispatch()
 def get_file_name(
     btmh: multihash.Multihash, file_index: int
 ) -> Union[str, bytes]:
-    ...
+    return cast(
+        Union[str, bytes],
+        plugins.call_first(
+            "tvaf.torrent_info.get_file_name", btmh, file_index
+        ),
+    )
 
 
 @lifecycle.lru_cache()
-@plugins.dispatch()
 def get_bencoded_info(btmh: multihash.Multihash) -> bytes:
-    ...
+    return cast(
+        bytes, plugins.call_first("tvaf.torrent_info.get_bencoded_info", btmh)
+    )
 
 
 @lifecycle.lru_cache()
-@plugins.dispatch()
 def get_parsed_info(btmh: multihash.Multihash) -> Dict[bytes, Any]:
-    ...
+    return cast(
+        Dict[bytes, Any],
+        plugins.call_first("tvaf.torrent_info.get_parsed_info", btmh),
+    )
 
 
-@plugins.dispatch()
 def get_configure_atp(btmh: multihash.Multihash) -> ConfigureATP:
-    ...
+    return cast(
+        ConfigureATP,
+        plugins.call_first("tvaf.torrent_info.get_configure_atp", btmh),
+    )
 
 
 def check_file_index_default(
