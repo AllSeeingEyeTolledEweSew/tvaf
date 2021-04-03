@@ -19,14 +19,15 @@ from typing import Optional
 from typing import Union
 
 import fastapi
-import multihash
 from pydantic import NonNegativeInt
 import starlette.responses
 import starlette.types
 
+from tvaf import multihash
 from tvaf import request as request_lib
 from tvaf import services
 from tvaf import torrent_info
+from tvaf import types
 
 router = fastapi.APIRouter(prefix="/v1", tags=["data access"])
 
@@ -44,7 +45,9 @@ class MultihashHex(multihash.Multihash):
     def validate(cls, value: Union[str, bytes]) -> multihash.Multihash:
         if isinstance(value, str):
             value = bytes.fromhex(value)
-        return multihash.decode(value)
+        if value.startswith(b"\x11\x14"):
+            return multihash.Multihash(multihash.Func.sha1, value[2:])
+        raise ValueError("only sha1 is supported")
 
 
 class AlwaysRunStreamingResponse(starlette.responses.StreamingResponse):
@@ -95,7 +98,7 @@ def read_file(
     if request.method == "GET":
         request_service = services.get_request_service()
         request = request_service.add_request(
-            info_hash=btmh.digest.hex(),
+            info_hash=types.InfoHash(btmh.digest.hex()),
             start=start,
             stop=stop,
             mode=request_lib.Mode.READ,

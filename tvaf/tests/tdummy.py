@@ -21,9 +21,9 @@ from typing import Type
 from typing import TypeVar
 
 import libtorrent as lt
-import multihash
 from typing_extensions import TypedDict
 
+from tvaf import multihash
 from tvaf import protocol
 from tvaf import types
 

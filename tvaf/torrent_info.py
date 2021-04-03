@@ -19,10 +19,10 @@ from typing import Tuple
 from typing import Union
 
 import libtorrent as lt
-import multihash
 
 from tvaf import lifecycle
 from tvaf import ltpy
+from tvaf import multihash
 from tvaf import plugins
 from tvaf import services
 from tvaf.types import ConfigureATP

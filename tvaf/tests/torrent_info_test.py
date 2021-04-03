@@ -17,9 +17,9 @@ from typing import Dict
 import unittest.mock
 
 import libtorrent as lt
-import multihash
 
 from tvaf import lifecycle
+from tvaf import multihash
 from tvaf import plugins
 from tvaf import services
 from tvaf import torrent_info
