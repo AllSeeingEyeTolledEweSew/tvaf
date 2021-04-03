@@ -17,7 +17,6 @@
 # module no matter what I do
 
 
-import dataclasses
 import json
 import os
 import time
@@ -30,7 +29,6 @@ import importlib_resources
 
 from tvaf import config as config_lib
 from tvaf import session as session_lib
-import tvaf.types
 
 
 def create_isolated_config() -> config_lib.Config:
@@ -134,11 +132,3 @@ class TestCase(unittest.TestCase):
         kwargs["sort_keys"] = True
         value_text = json.dumps(value, **kwargs)
         self.assert_golden(value_text, suffix=suffix)
-
-    def assert_golden_torrent_meta(
-        self, *meta: tvaf.types.TorrentMeta, suffix: str = "status.golden.json"
-    ) -> None:
-        """Compares a list of TorrentMetas to golden data."""
-        self.assert_golden_json(
-            [dataclasses.asdict(m) for m in meta], suffix=suffix
-        )
