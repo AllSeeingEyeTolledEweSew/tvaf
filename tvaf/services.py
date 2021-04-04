@@ -13,6 +13,7 @@
 
 
 import contextlib
+import logging
 import threading
 from typing import ContextManager
 from typing import Iterator
@@ -26,6 +27,8 @@ from tvaf import plugins
 from tvaf import request as request_lib
 from tvaf import resume as resume_lib
 from tvaf import session as session_lib
+
+_LOG = logging.getLogger(__name__)
 
 
 def startup() -> None:
@@ -51,7 +54,7 @@ def set_config(config: config_lib.Config):
         pass
 
 
-_lifespan_lock = threading.Lock()
+_process_lock = threading.Lock()
 
 
 @lifecycle.singleton()
@@ -118,13 +121,15 @@ def stage_config_request_service(
     return get_request_service().stage_config(config)
 
 
-def lock_lifespan() -> None:
-    if not _lifespan_lock.acquire(blocking=False):
+def lock_process() -> None:
+    _LOG.debug("acquiring process lock")
+    if not _process_lock.acquire(blocking=False):
         raise AssertionError("only one instance allowed")
 
 
-def unlock_lifespan() -> None:
-    _lifespan_lock.release()
+def unlock_process() -> None:
+    _LOG.debug("releasing process lock")
+    _process_lock.release()
 
 
 def startup_alert_driver() -> None:
@@ -142,6 +147,7 @@ def startup_resume_service() -> None:
 def load_resume_data() -> None:
     # Load resume data
     session = get_session()
+    _LOG.debug("loading resume data")
     for atp in resume_lib.iter_resume_data_from_disk():
         session.async_add_torrent(atp)
 
@@ -152,12 +158,13 @@ def shutdown_drain_requests() -> None:
     request_service.join()
 
 
-def shutdown_session() -> None:
-    # Should be no more alert-generating actions
-
-    # Libtorrent shutdown sequence
+def shutdown_pause_session() -> None:
     session = get_session()
+    _LOG.debug("pausing libtorrent session")
     session.pause()
+
+
+def shutdown_save_resume_data() -> None:
     resume_service = get_resume_service()
     resume_service.terminate()
     resume_service.join()

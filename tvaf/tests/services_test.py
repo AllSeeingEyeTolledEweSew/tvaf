@@ -1,0 +1,94 @@
+# Copyright (c) 2020 AllSeeingEyeTolledEweSew
+#
+# Permission to use, copy, modify, and/or distribute this software for any
+# purpose with or without fee is hereby granted.
+#
+# THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+# REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+# INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+# LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+# OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+# PERFORMANCE OF THIS SOFTWARE.
+
+import contextlib
+import os
+import pathlib
+import tempfile
+from typing import Iterator
+import unittest
+
+from tvaf import config as config_lib
+from tvaf import resume as resume_lib
+from tvaf import services
+
+from . import lib
+from . import tdummy
+
+
+class ServicesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.cwd = pathlib.Path.cwd()
+        self.tempdir = tempfile.TemporaryDirectory()
+        os.chdir(self.tempdir.name)
+        self.config = lib.create_isolated_config()
+        self.config.write_to_disk()
+
+    def tearDown(self) -> None:
+        os.chdir(self.cwd)
+        self.tempdir.cleanup()
+
+    @contextlib.contextmanager
+    def start_stop_session(self) -> Iterator[None]:
+        services.startup()
+        yield
+        services.shutdown()
+
+    def test_with_config(self) -> None:
+        self.assertTrue(config_lib.PATH.is_file())
+        with self.start_stop_session():
+            pass
+
+    def test_empty_directory(self) -> None:
+        config_lib.PATH.unlink()
+        self.assertEqual(list(pathlib.Path().iterdir()), [])
+        with self.start_stop_session():
+            pass
+
+    def test_set_config(self) -> None:
+        with self.start_stop_session():
+            test_path = str(pathlib.Path(self.tempdir.name) / "test")
+            self.config["torrent_default_save_path"] = test_path
+
+            services.set_config(self.config)
+
+            # Test loaded into available config
+            self.assertEqual(
+                services.get_config()["torrent_default_save_path"], test_path
+            )
+            # Test written to disk
+            self.assertEqual(config_lib.Config.from_disk(), self.config)
+
+    def test_set_invalid_config(self) -> None:
+        with self.start_stop_session():
+            self.config["torrent_default_storage_mode"] = "invalid"
+            with self.assertRaises(config_lib.InvalidConfigError):
+                services.set_config(self.config)
+            self.assertNotEqual(
+                services.get_config().get_str("torrent_default_storage_mode"),
+                "invalid",
+            )
+
+    def test_save_and_load_resume_data(self) -> None:
+        with self.start_stop_session():
+            services.get_session().add_torrent(tdummy.DEFAULT.atp())
+
+        self.assertEqual(len(list(resume_lib.iter_resume_data_from_disk())), 1)
+
+        with self.start_stop_session():
+            self.assertEqual(len(services.get_session().get_torrents()), 1)
+
+    def test_process_lock(self) -> None:
+        with self.start_stop_session():
+            with self.assertRaises(AssertionError):
+                services.startup()
