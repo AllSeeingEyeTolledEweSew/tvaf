@@ -32,7 +32,7 @@ class ServicesTest(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         os.chdir(self.tempdir.name)
         self.config = lib.create_isolated_config()
-        self.config.write_to_disk()
+        self.config.write_to_disk(services.CONFIG_PATH)
 
     def tearDown(self) -> None:
         os.chdir(self.cwd)
@@ -45,12 +45,12 @@ class ServicesTest(unittest.TestCase):
         services.shutdown()
 
     def test_with_config(self) -> None:
-        self.assertTrue(config_lib.PATH.is_file())
+        self.assertTrue(services.CONFIG_PATH.is_file())
         with self.start_stop_session():
             pass
 
     def test_empty_directory(self) -> None:
-        config_lib.PATH.unlink()
+        services.CONFIG_PATH.unlink()
         self.assertEqual(list(pathlib.Path().iterdir()), [])
         with self.start_stop_session():
             pass
@@ -67,7 +67,9 @@ class ServicesTest(unittest.TestCase):
                 services.get_config()["torrent_default_save_path"], test_path
             )
             # Test written to disk
-            self.assertEqual(config_lib.Config.from_disk(), self.config)
+            self.assertEqual(
+                config_lib.Config.from_disk(services.CONFIG_PATH), self.config
+            )
 
     def test_set_invalid_config(self) -> None:
         with self.start_stop_session():
@@ -83,7 +85,16 @@ class ServicesTest(unittest.TestCase):
         with self.start_stop_session():
             services.get_session().add_torrent(tdummy.DEFAULT.atp())
 
-        self.assertEqual(len(list(resume_lib.iter_resume_data_from_disk())), 1)
+        self.assertEqual(
+            len(
+                list(
+                    resume_lib.iter_resume_data_from_disk(
+                        services.RESUME_DATA_PATH
+                    )
+                )
+            ),
+            1,
+        )
 
         with self.start_stop_session():
             self.assertEqual(len(services.get_session().get_torrents()), 1)

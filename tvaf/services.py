@@ -14,6 +14,7 @@
 
 import contextlib
 import logging
+import pathlib
 import threading
 from typing import ContextManager
 from typing import Iterator
@@ -29,6 +30,9 @@ from tvaf import resume as resume_lib
 from tvaf import session as session_lib
 
 _LOG = logging.getLogger(__name__)
+
+CONFIG_PATH = pathlib.Path("config.json")
+RESUME_DATA_PATH = pathlib.Path("resume")
 
 
 def startup() -> None:
@@ -60,7 +64,7 @@ _process_lock = threading.Lock()
 @lifecycle.singleton()
 def get_config() -> config_lib.Config:
     try:
-        return config_lib.Config.from_disk()
+        return config_lib.Config.from_disk(CONFIG_PATH)
     except FileNotFoundError:
         return config_lib.Config()
 
@@ -83,7 +87,9 @@ def get_alert_driver() -> driver_lib.AlertDriver:
 @lifecycle.singleton()
 def get_resume_service() -> resume_lib.ResumeService:
     return resume_lib.ResumeService(
-        session=get_session(), alert_driver=get_alert_driver()
+        session=get_session(),
+        alert_driver=get_alert_driver(),
+        path=RESUME_DATA_PATH,
     )
 
 
@@ -100,7 +106,7 @@ def get_request_service() -> request_lib.RequestService:
 @contextlib.contextmanager
 def stage_config_disk(config: config_lib.Config) -> Iterator[None]:
     yield
-    config.write_to_disk()
+    config.write_to_disk(CONFIG_PATH)
 
 
 @contextlib.contextmanager
@@ -148,7 +154,7 @@ def load_resume_data() -> None:
     # Load resume data
     session = get_session()
     _LOG.debug("loading resume data")
-    for atp in resume_lib.iter_resume_data_from_disk():
+    for atp in resume_lib.iter_resume_data_from_disk(RESUME_DATA_PATH):
         session.async_add_torrent(atp)
 
 

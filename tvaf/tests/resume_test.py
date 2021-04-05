@@ -11,7 +11,7 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-import os
+import pathlib
 import tempfile
 from typing import Any
 from typing import cast
@@ -62,14 +62,11 @@ class IterResumeDataTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
-        self.cwd = os.getcwd()
-        os.chdir(self.tempdir.name)
+        self.path = pathlib.Path(self.tempdir.name)
 
         def write(torrent: tdummy.Torrent) -> None:
-            resume_lib.RESUME_DATA_PATH.mkdir(parents=True, exist_ok=True)
-            path = resume_lib.RESUME_DATA_PATH.joinpath(
-                torrent.info_hash
-            ).with_suffix(".resume")
+            self.path.mkdir(parents=True, exist_ok=True)
+            path = self.path.joinpath(torrent.info_hash).with_suffix(".resume")
             atp = torrent.atp()
             atp.ti = None
             atp_data = lt.bencode(lt.write_resume_data(atp))
@@ -106,49 +103,38 @@ class IterResumeDataTest(unittest.TestCase):
         )
 
     def tearDown(self) -> None:
-        os.chdir(self.cwd)
         self.tempdir.cleanup()
 
     def test_normal(self) -> None:
-        atps = list(resume_lib.iter_resume_data_from_disk())
+        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
         self.assert_atp_sets_equal(
             set(atps), {self.TORRENT1.atp(), self.TORRENT2.atp()}
         )
 
     def test_ignore_bad_data(self) -> None:
         # valid resume data, wrong filename
-        path = resume_lib.RESUME_DATA_PATH.joinpath("00" * 20).with_suffix(
-            ".tmp"
-        )
+        path = self.path.joinpath("00" * 20).with_suffix(".tmp")
         data = lt.bencode(lt.write_resume_data(self.TORRENT3.atp()))
         path.write_bytes(data)
 
         # valid resume data, wrong filename
-        path = resume_lib.RESUME_DATA_PATH.joinpath("whoopsie").with_suffix(
-            ".resume"
-        )
+        path = self.path.joinpath("whoopsie").with_suffix(".resume")
         data = lt.bencode(lt.write_resume_data(self.TORRENT3.atp()))
         path.write_bytes(data)
 
         # good file name, non-bencoded data
-        path = resume_lib.RESUME_DATA_PATH.joinpath("00" * 20).with_suffix(
-            ".resume"
-        )
+        path = self.path.joinpath("00" * 20).with_suffix(".resume")
         path.write_text("whoopsie")
 
         # good file name, bencoded data, but not a resume file
-        path = resume_lib.RESUME_DATA_PATH.joinpath("01" * 20).with_suffix(
-            ".resume"
-        )
+        path = self.path.joinpath("01" * 20).with_suffix(".resume")
         path.write_bytes(lt.bencode(self.TORRENT1.info))
 
         # good file name, inaccessible
-        path = resume_lib.RESUME_DATA_PATH.joinpath("02" * 20).with_suffix(
-            ".resume"
-        )
+        path = self.path.joinpath("02" * 20).with_suffix(".resume")
         path.symlink_to("does_not_exist.resume")
 
-        atps = list(resume_lib.iter_resume_data_from_disk())
+        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
         self.assert_atp_sets_equal(
             set(atps), {self.TORRENT1.atp(), self.TORRENT2.atp()}
         )
@@ -160,8 +146,7 @@ class TerminateTest(unittest.TestCase):
         self.session = self.session_service.session
         self.torrent = tdummy.DEFAULT
         self.tempdir = tempfile.TemporaryDirectory()
-        self.cwd = os.getcwd()
-        os.chdir(self.tempdir.name)
+        self.path = pathlib.Path(self.tempdir.name)
         self.alert_driver = driver_lib.AlertDriver(
             session_service=self.session_service
         )
@@ -169,6 +154,7 @@ class TerminateTest(unittest.TestCase):
             session=self.session,
             alert_driver=self.alert_driver,
             pedantic=True,
+            path=self.path,
         )
         self.resume.start()
         self.alert_driver.start()
@@ -178,8 +164,6 @@ class TerminateTest(unittest.TestCase):
         self.resume.join()
         self.alert_driver.terminate()
         self.alert_driver.join()
-
-        os.chdir(self.cwd)
         self.tempdir.cleanup()
 
     def test_mid_download(self) -> None:
@@ -210,7 +194,7 @@ class TerminateTest(unittest.TestCase):
                 return False
             return all(bitmask[i] for i in range(num_blocks))
 
-        atps = list(resume_lib.iter_resume_data_from_disk())
+        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
         self.assertEqual(len(atps), 1)
         atp = atps[0]
         self.assertTrue(atp_have_piece(atp, 0))
@@ -234,7 +218,7 @@ class TerminateTest(unittest.TestCase):
         self.resume.terminate()
         self.resume.join()
 
-        atps = list(resume_lib.iter_resume_data_from_disk())
+        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
         self.assertEqual(len(atps), 1)
         atp = atps[0]
         self.assertNotEqual(len(atp.have_pieces), 0)
@@ -260,7 +244,7 @@ class TerminateTest(unittest.TestCase):
         self.resume.terminate()
         self.resume.join()
 
-        atps = list(resume_lib.iter_resume_data_from_disk())
+        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
         self.assertEqual(atps, [])
 
     def test_finish_remove_terminate(self) -> None:
@@ -286,7 +270,7 @@ class TerminateTest(unittest.TestCase):
         self.resume.terminate()
         self.resume.join()
 
-        atps = list(resume_lib.iter_resume_data_from_disk())
+        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
         self.assertEqual(atps, [])
 
 

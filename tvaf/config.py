@@ -14,6 +14,7 @@
 import abc
 import contextlib
 import json
+import os
 import pathlib
 from typing import Any
 from typing import Callable
@@ -23,6 +24,7 @@ from typing import MutableMapping
 from typing import Optional
 from typing import Type
 from typing import TypeVar
+from typing import Union
 
 # Design notes:
 
@@ -52,9 +54,6 @@ from typing import TypeVar
 # So we design our components to be long-lived objects which can be
 # re-configured over their lifetimes.
 
-FILENAME = "config.json"
-PATH = pathlib.Path(FILENAME)
-
 
 class Error(Exception):
 
@@ -71,16 +70,18 @@ _T = TypeVar("_T")
 
 class Config(dict, MutableMapping[str, Any]):
     @classmethod
-    def from_disk(cls: Type["_C"]) -> "_C":
-        with PATH.open() as fp:
+    def from_disk(cls: Type["_C"], path: Union[str, os.PathLike]) -> "_C":
+        path = pathlib.Path(path)
+        with path.open() as fp:
             try:
                 data = json.load(fp)
             except json.JSONDecodeError as exc:
                 raise InvalidConfigError(str(exc)) from exc
         return cls(data)
 
-    def write_to_disk(self) -> None:
-        with PATH.open(mode="w") as fp:
+    def write_to_disk(self, path: Union[str, os.PathLike]) -> None:
+        path = pathlib.Path(path)
+        with path.open(mode="w") as fp:
             json.dump(self, fp, sort_keys=True, indent=4)
 
     def _get(self, key: str, type_: Type[_T]) -> Optional[_T]:

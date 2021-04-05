@@ -12,7 +12,7 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 import contextlib
-import os
+import pathlib
 import tempfile
 from typing import Iterator
 import unittest
@@ -23,35 +23,33 @@ from tvaf import config as config_lib
 class TestReadWrite(unittest.TestCase):
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
-        self.cwd = os.getcwd()
-        os.chdir(self.tempdir.name)
+        self.path = pathlib.Path(self.tempdir.name) / "config.json"
 
     def tearDown(self) -> None:
-        os.chdir(self.cwd)
         self.tempdir.cleanup()
 
     def test_from_disk(self) -> None:
-        config_lib.PATH.write_text(
+        self.path.write_text(
             '{"text_field": "value", ' '"numeric_field": 123}'
         )
 
-        config = config_lib.Config.from_disk()
+        config = config_lib.Config.from_disk(self.path)
 
         self.assertEqual(
             config, config_lib.Config(text_field="value", numeric_field=123)
         )
 
     def test_from_disk_invalid_json(self) -> None:
-        config_lib.PATH.write_text("invalid json")
+        self.path.write_text("invalid json")
 
         with self.assertRaises(config_lib.InvalidConfigError):
-            config_lib.Config.from_disk()
+            config_lib.Config.from_disk(self.path)
 
     def test_write(self) -> None:
         config = config_lib.Config(text_field="value", numeric_field=123)
-        config.write_to_disk()
+        config.write_to_disk(self.path)
 
-        config_text = config_lib.PATH.read_text()
+        config_text = self.path.read_text()
 
         self.assertEqual(
             config_text,

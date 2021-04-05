@@ -15,6 +15,7 @@ import concurrent.futures
 import contextlib
 import logging
 import math
+import os
 import pathlib
 import re
 import threading
@@ -22,6 +23,7 @@ from typing import Callable
 from typing import cast
 from typing import Iterator
 from typing import Optional
+from typing import Union
 import warnings
 
 import libtorrent as lt
@@ -32,8 +34,6 @@ from tvaf import task as task_lib
 
 _LOG = logging.getLogger(__name__)
 
-RESUME_DATA_DIR_NAME = "resume"
-RESUME_DATA_PATH = pathlib.Path(RESUME_DATA_DIR_NAME)
 SAVE_ALL_INTERVAL = math.tan(1.5657)  # ~196
 
 
@@ -102,10 +102,13 @@ def _try_load_atp(path: pathlib.Path) -> Optional[lt.add_torrent_params]:
         return None
 
 
-def iter_resume_data_from_disk() -> Iterator[lt.add_torrent_params]:
-    if not RESUME_DATA_PATH.is_dir():
+def iter_resume_data_from_disk(
+    dir_path: Union[str, os.PathLike],
+) -> Iterator[lt.add_torrent_params]:
+    dir_path = pathlib.Path(dir_path)
+    if not dir_path.is_dir():
         return
-    for path in RESUME_DATA_PATH.iterdir():
+    for path in dir_path.iterdir():
         if path.suffixes != [".resume"]:
             continue
         if not re.match(r"[0-9a-f]{40}", path.stem):
@@ -371,11 +374,13 @@ class ResumeService(task_lib.Task):
         *,
         session: lt.session,
         alert_driver: driver_lib.AlertDriver,
+        path: Union[str, os.PathLike],
         pedantic=False
     ):
         super().__init__(title="ResumeService", thread_name="resume")
         self._counter = _Counter()
         self._session = session
+        self._path = pathlib.Path(path)
 
         self._receiver_task = _ReceiverTask(
             resume_service=self,
@@ -394,12 +399,10 @@ class ResumeService(task_lib.Task):
         self._add_child(self._periodic_task, start=False)
 
     def get_resume_data_path(self, info_hash: lt.sha1_hash) -> pathlib.Path:
-        return RESUME_DATA_PATH.joinpath(str(info_hash)).with_suffix(".resume")
+        return self._path.joinpath(str(info_hash)).with_suffix(".resume")
 
     def get_torrent_path(self, info_hash: lt.sha1_hash) -> pathlib.Path:
-        return RESUME_DATA_PATH.joinpath(str(info_hash)).with_suffix(
-            ".torrent"
-        )
+        return self._path.joinpath(str(info_hash)).with_suffix(".torrent")
 
     def _terminate(self) -> None:
         pass

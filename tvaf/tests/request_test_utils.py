@@ -81,6 +81,7 @@ class RequestServiceTestCase(unittest.TestCase):
         self.resume_service = resume_lib.ResumeService(
             alert_driver=self.alert_driver,
             session=self.session,
+            path=self.tempdir.name,
         )
         self.service = request_lib.RequestService(
             session=self.session,

@@ -44,7 +44,6 @@ from tvaf import xmemoryview as xmv
 _LOG = logging.getLogger(__name__)
 
 DEFAULT_DOWNLOAD_DIR_NAME = "downloads"
-DEFAULT_DOWNLOAD_PATH = pathlib.Path(DEFAULT_DOWNLOAD_DIR_NAME)
 
 
 class Mode(enum.Enum):
@@ -708,7 +707,7 @@ class RequestService(task_lib.Task, config_lib.HasConfig):
     def stage_config(self, config: config_lib.Config) -> Iterator[None]:
         config.setdefault(
             "torrent_default_save_path",
-            str(DEFAULT_DOWNLOAD_PATH.resolve()),
+            str(pathlib.Path(DEFAULT_DOWNLOAD_DIR_NAME).resolve()),
         )
 
         atp_settings: MutableMapping[str, Any] = {}
