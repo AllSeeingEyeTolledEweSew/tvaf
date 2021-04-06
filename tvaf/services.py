@@ -119,8 +119,23 @@ def get_request_service() -> request_lib.RequestService:
 
 @contextlib.contextmanager
 def stage_config_disk(config: config_lib.Config) -> Iterator[None]:
-    yield
-    config.write_to_disk(CONFIG_PATH)
+    tmp_path = CONFIG_PATH.with_suffix(".tmp")
+    config.write_to_disk(tmp_path)
+    _LOG.debug("staged config to disk: %s", tmp_path)
+    try:
+        yield
+        try:
+            tmp_path.replace(CONFIG_PATH)
+            _LOG.info("wrote %s", CONFIG_PATH)
+        except OSError:
+            _LOG.exception("couldn't write %s", CONFIG_PATH)
+    finally:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            _LOG.exception("can't unlink temp file %s", tmp_path)
 
 
 @contextlib.contextmanager
