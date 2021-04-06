@@ -15,24 +15,20 @@
 
 import collections
 import collections.abc
-import contextlib
 import enum
 import logging
-import pathlib
 import threading
 from typing import Any
 from typing import Dict
 from typing import Iterable
 from typing import Iterator
 from typing import Mapping
-from typing import MutableMapping
 from typing import Optional
 from typing import Set
 from weakref import WeakValueDictionary
 
 import libtorrent as lt
 
-from tvaf import config as config_lib
 from tvaf import driver as driver_lib
 from tvaf import ltpy
 from tvaf import resume as resume_lib
@@ -619,11 +615,10 @@ class _TorrentTask(task_lib.Task):
         self._run_with_handle(handle)
 
 
-class RequestService(task_lib.Task, config_lib.HasConfig):
+class RequestService(task_lib.Task):
     def __init__(
         self,
         *,
-        config: config_lib.Config,
         alert_driver: driver_lib.AlertDriver,
         resume_service: resume_lib.ResumeService,
         session: lt.session,
@@ -643,8 +638,6 @@ class RequestService(task_lib.Task, config_lib.HasConfig):
 
         self._atp_settings: Mapping[str, Any] = {}
 
-        self.set_config(config)
-
     def add_request(
         self,
         *,
@@ -654,16 +647,12 @@ class RequestService(task_lib.Task, config_lib.HasConfig):
         mode: Mode,
         configure_atp: types.ConfigureATP,
     ) -> Request:
-        def _configure_atp_with_settings(atp: lt.add_torrent_params) -> None:
-            configure_atp(atp)
-            self.configure_atp(atp)
-
         request = Request(
             info_hash=info_hash,
             start=start,
             stop=stop,
             mode=mode,
-            configure_atp=_configure_atp_with_settings,
+            configure_atp=configure_atp,
         )
 
         with self._lock:
@@ -702,57 +691,3 @@ class RequestService(task_lib.Task, config_lib.HasConfig):
     def _run(self) -> None:
         self._terminated.wait()
         self._log_terminate()
-
-    @contextlib.contextmanager
-    def stage_config(self, config: config_lib.Config) -> Iterator[None]:
-        config.setdefault(
-            "torrent_default_save_path",
-            str(pathlib.Path(DEFAULT_DOWNLOAD_DIR_NAME).resolve()),
-        )
-
-        atp_settings: MutableMapping[str, Any] = {}
-
-        save_path = pathlib.Path(
-            config.require_str("torrent_default_save_path")
-        )
-        try:
-            # Raises RuntimeError on symlink loops
-            save_path = save_path.resolve()
-        except RuntimeError as exc:
-            raise config_lib.InvalidConfigError(str(exc)) from exc
-
-        atp_settings["save_path"] = str(save_path)
-
-        name_to_flag = {
-            "apply_ip_filter": lt.torrent_flags.apply_ip_filter,
-        }
-
-        for name, flag in name_to_flag.items():
-            key = f"torrent_default_flags_{name}"
-            value = config.get_bool(key)
-            if value is None:
-                continue
-            atp_settings.setdefault("flags", lt.torrent_flags.default_flags)
-            if value:
-                atp_settings["flags"] |= flag
-            else:
-                atp_settings["flags"] &= ~flag
-
-        maybe_name = config.get_str("torrent_default_storage_mode")
-        if maybe_name is not None:
-            full_name = f"storage_mode_{maybe_name}"
-            mode = lt.storage_mode_t.names.get(full_name)
-            if mode is None:
-                raise config_lib.InvalidConfigError(
-                    f"invalid storage mode {maybe_name}"
-                )
-            atp_settings["storage_mode"] = mode
-
-        with self._lock:
-            yield
-            self._atp_settings = atp_settings
-
-    def configure_atp(self, atp: lt.add_torrent_params) -> None:
-        atp_settings = self._atp_settings
-        for key, value in atp_settings.items():
-            setattr(atp, key, value)

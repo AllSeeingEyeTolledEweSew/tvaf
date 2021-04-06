@@ -14,12 +14,10 @@
 import concurrent.futures
 import os
 import os.path
-import pathlib
 import tempfile
 
 import libtorrent as lt
 
-from tvaf import config as config_lib
 from tvaf import request as request_lib
 
 from . import lib
@@ -42,7 +40,6 @@ class TestCleanup(request_test_utils.RequestServiceTestCase):
     def setUp(self) -> None:
         super().setUp()
         atp = self.torrent.atp()
-        self.service.configure_atp(atp)
         self.handle = self.session.add_torrent(atp)
         self.handle.prioritize_pieces([0] * len(self.torrent.pieces))
         self.cleanup = request_lib._Cleanup(
@@ -196,10 +193,12 @@ class TestRead(request_test_utils.RequestServiceTestCase):
         path = os.path.join(self.tempdir.name, "file.txt")
         with open(path, mode="w"):
             pass
-        self.config["torrent_default_save_path"] = path
-        self.service.set_config(self.config)
 
-        req = self.add_req()
+        def configure_atp(atp: lt.add_torrent_params) -> None:
+            self.torrent.configure_atp(atp)
+            atp.save_path = path
+
+        req = self.add_req(configure_atp=configure_atp)
         self.feed_pieces()
 
         with self.assertRaises(NotADirectoryError):
@@ -266,79 +265,3 @@ class TestRemoveTorrent(request_test_utils.RequestServiceTestCase):
         self.session.remove_torrent(self.wait_for_torrent())
         with self.assertRaises(request_lib.TorrentRemovedError):
             req.read(timeout=5)
-
-
-class TestConfig(request_test_utils.RequestServiceTestCase):
-    def test_config_defaults(self) -> None:
-        save_path = str(pathlib.Path("downloads").resolve())
-        self.assertEqual(
-            self.config, config_lib.Config(torrent_default_save_path=save_path)
-        )
-
-        atp = lt.add_torrent_params()
-        self.service.configure_atp(atp)
-
-        self.assertEqual(atp.save_path, save_path)
-
-    def test_set_config(self) -> None:
-        # Set all non-default configs
-        self.config["torrent_default_save_path"] = self.tempdir.name
-        self.config["torrent_default_flags_apply_ip_filter"] = False
-        self.config["torrent_default_storage_mode"] = "allocate"
-        self.service.set_config(self.config)
-
-        atp = lt.add_torrent_params()
-        self.service.configure_atp(atp)
-
-        self.assertEqual(atp.save_path, self.tempdir.name)
-        self.assertEqual(
-            atp.flags,
-            lt.torrent_flags.default_flags & ~lt.torrent_flags.apply_ip_filter,
-        )
-        self.assertEqual(
-            atp.storage_mode, lt.storage_mode_t.storage_mode_allocate
-        )
-
-        # Set some default configs
-        self.config["torrent_default_flags_apply_ip_filter"] = True
-        self.config["torrent_default_storage_mode"] = "sparse"
-        self.service.set_config(self.config)
-
-        atp = lt.add_torrent_params()
-        self.service.configure_atp(atp)
-
-        self.assertEqual(atp.save_path, self.tempdir.name)
-        self.assertEqual(atp.flags, lt.torrent_flags.default_flags)
-        self.assertEqual(
-            atp.storage_mode, lt.storage_mode_t.storage_mode_sparse
-        )
-
-    def test_save_path_loop(self) -> None:
-        bad_link = pathlib.Path("bad_link")
-        bad_link.symlink_to(bad_link, target_is_directory=True)
-
-        self.config["torrent_default_save_path"] = str(bad_link)
-        with self.assertRaises(config_lib.InvalidConfigError):
-            self.service.set_config(self.config)
-
-    def test_flags_apply_ip_filter_null(self) -> None:
-        self.config["torrent_default_flags_apply_ip_filter"] = None
-        with self.assertRaises(config_lib.InvalidConfigError):
-            self.service.set_config(self.config)
-
-    def test_storage_mode_invalid(self) -> None:
-        self.config["torrent_default_storage_mode"] = "invalid"
-        with self.assertRaises(config_lib.InvalidConfigError):
-            self.service.set_config(self.config)
-
-    def test_stage_revert(self) -> None:
-        self.config["torrent_default_storage_mode"] = "allocate"
-        with self.assertRaises(DummyException):
-            with self.service.stage_config(self.config):
-                _raise_dummy()
-
-        atp = lt.add_torrent_params()
-        self.service.configure_atp(atp)
-        self.assertEqual(
-            atp.storage_mode, lt.storage_mode_t.storage_mode_sparse
-        )

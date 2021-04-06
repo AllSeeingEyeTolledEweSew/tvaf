@@ -17,7 +17,6 @@ import unittest
 
 import libtorrent as lt
 
-from tvaf import config as config_lib
 from tvaf import driver as driver_lib
 from tvaf import request as request_lib
 from tvaf import resume as resume_lib
@@ -61,7 +60,6 @@ class RequestServiceTestCase(unittest.TestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.cwd = os.getcwd()
         os.chdir(self.tempdir.name)
-        self.config = config_lib.Config()
         self.init_session()
 
     def teardown_session(self) -> None:
@@ -85,7 +83,6 @@ class RequestServiceTestCase(unittest.TestCase):
         )
         self.service = request_lib.RequestService(
             session=self.session,
-            config=self.config,
             alert_driver=self.alert_driver,
             resume_service=self.resume_service,
         )

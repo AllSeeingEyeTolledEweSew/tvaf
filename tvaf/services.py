@@ -16,7 +16,9 @@ import contextlib
 import logging
 import pathlib
 import threading
+from typing import Any
 from typing import ContextManager
+from typing import Dict
 from typing import Iterator
 
 import libtorrent as lt
@@ -33,6 +35,7 @@ _LOG = logging.getLogger(__name__)
 
 CONFIG_PATH = pathlib.Path("config.json")
 RESUME_DATA_PATH = pathlib.Path("resume")
+DEFAULT_DOWNLOAD_PATH = pathlib.Path("download")
 
 
 def startup() -> None:
@@ -56,6 +59,18 @@ def stage_config(config: config_lib.Config) -> Iterator[None]:
 def set_config(config: config_lib.Config):
     with stage_config(config):
         pass
+
+
+def get_default_atp() -> lt.add_torrent_params:
+    atp = lt.add_torrent_params()
+    for func in plugins.load_entry_points("tvaf.services.default_atp"):
+        func(atp)
+    return atp
+
+
+def configure_atp(atp: lt.add_torrent_params) -> None:
+    for func in plugins.load_entry_points("tvaf.services.configure_atp"):
+        func(atp)
 
 
 _process_lock = threading.Lock()
@@ -99,7 +114,6 @@ def get_request_service() -> request_lib.RequestService:
         session=get_session(),
         resume_service=get_resume_service(),
         alert_driver=get_alert_driver(),
-        config=get_config(),
     )
 
 
@@ -119,12 +133,6 @@ def stage_config_session_service(
     config: config_lib.Config,
 ) -> ContextManager[None]:
     return get_session_service().stage_config(config)
-
-
-def stage_config_request_service(
-    config: config_lib.Config,
-) -> ContextManager[None]:
-    return get_request_service().stage_config(config)
 
 
 def lock_process() -> None:
@@ -181,3 +189,67 @@ def shutdown_drain_alerts() -> None:
     alert_driver = get_alert_driver()
     alert_driver.terminate()
     alert_driver.join()
+
+
+def _get_atp_defaults_from_config(config: config_lib.Config) -> Dict[str, Any]:
+    config.setdefault("torrent_default_save_path", str(DEFAULT_DOWNLOAD_PATH))
+
+    atp_defaults: Dict[str, Any] = {}
+
+    save_path = pathlib.Path(config.require_str("torrent_default_save_path"))
+    try:
+        # Raises RuntimeError on symlink loops
+        save_path = save_path.resolve()
+    except RuntimeError as exc:
+        raise config_lib.InvalidConfigError(str(exc)) from exc
+
+    config["torrent_default_save_path"] = str(save_path)
+    atp_defaults["save_path"] = str(save_path)
+
+    name_to_flag = {
+        "apply_ip_filter": lt.torrent_flags.apply_ip_filter,
+    }
+
+    for name, flag in name_to_flag.items():
+        key = f"torrent_default_flags_{name}"
+        value = config.get_bool(key)
+        if value is None:
+            continue
+        atp_defaults.setdefault("flags", lt.torrent_flags.default_flags)
+        if value:
+            atp_defaults["flags"] |= flag
+        else:
+            atp_defaults["flags"] &= ~flag
+
+    maybe_name = config.get_str("torrent_default_storage_mode")
+    if maybe_name is not None:
+        full_name = f"storage_mode_{maybe_name}"
+        mode = lt.storage_mode_t.names.get(full_name)
+        if mode is None:
+            raise config_lib.InvalidConfigError(
+                f"invalid storage mode {maybe_name}"
+            )
+        atp_defaults["storage_mode"] = mode
+    return atp_defaults
+
+
+@lifecycle.singleton()
+def _get_atp_defaults() -> Dict[str, Any]:
+    return _get_atp_defaults_from_config(get_config())
+
+
+def startup_config_default_atp() -> None:
+    # Parse existing config
+    _get_atp_defaults()
+
+
+@contextlib.contextmanager
+def stage_config_default_atp(config: config_lib.Config) -> Iterator[None]:
+    _get_atp_defaults_from_config(config)
+    yield
+    _get_atp_defaults.cache_clear()
+
+
+def default_atp_from_config(atp: lt.add_torrent_params) -> None:
+    for key, value in _get_atp_defaults().items():
+        setattr(atp, key, value)
