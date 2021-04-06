@@ -117,6 +117,13 @@ def get_request_service() -> request_lib.RequestService:
     )
 
 
+_config_lock = threading.Lock()
+
+
+def stage_config_lock(_: config_lib.Config) -> ContextManager:
+    return _config_lock
+
+
 @contextlib.contextmanager
 def stage_config_disk(config: config_lib.Config) -> Iterator[None]:
     tmp_path = CONFIG_PATH.with_suffix(".tmp")
