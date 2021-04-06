@@ -13,6 +13,8 @@
 
 import sys
 from typing import Any
+from typing import Dict
+from typing import Tuple
 import unittest
 import unittest.mock
 
@@ -37,19 +39,43 @@ def raise_pass() -> str:
     raise plugins.Pass()
 
 
+class SelectableGroupsMock:
+    def __init__(
+        self,
+        entry_points: Dict[str, Tuple[importlib_metadata.EntryPoint, ...]],
+    ):
+        self.entry_points = entry_points
+
+    def select(
+        self, *, group: str
+    ) -> Tuple[importlib_metadata.EntryPoint, ...]:
+        return self.entry_points.get(group) or ()
+
+
 # There doesn't seem to be an API to add new distributions or create
 # sys.meta_path finders to return fake distributions. Instead we patch out
 # importlib.metadata.entry_points().
 class EntryPointMockerTest(unittest.TestCase):
     def setUp(self) -> None:
         # Ensure this becomes a copied Dict[str, Tuple[EntryPoint, ...]]
-        self.entry_points = {
+        self.entry_points: Dict[
+            str, Tuple[importlib_metadata.EntryPoint, ...]
+        ] = {
             group: tuple(values)
             for (group, values) in importlib_metadata.entry_points().items()
         }
-        self.patch = unittest.mock.patch.object(
-            importlib_metadata, "entry_points", return_value=self.entry_points
-        )
+        if sys.version_info >= (3, 8):
+            self.patch = unittest.mock.patch.object(
+                importlib_metadata,
+                "entry_points",
+                return_value=self.entry_points,
+            )
+        else:
+            self.patch = unittest.mock.patch.object(
+                importlib_metadata,
+                "entry_points",
+                return_value=SelectableGroupsMock(self.entry_points),
+            )
         self.patch.start()
 
     def add_entry(self, name: str, value: Any, group: Any) -> None:

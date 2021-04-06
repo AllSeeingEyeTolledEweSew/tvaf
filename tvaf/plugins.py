@@ -15,6 +15,7 @@
 import collections
 import sys
 from typing import Any
+from typing import cast
 from typing import Iterable
 from typing import List
 from typing import Tuple
@@ -31,10 +32,24 @@ def _entry_point_key(entry: importlib_metadata.EntryPoint) -> Tuple:
     return (entry.name, entry.value)
 
 
+def _select_eps_group(
+    group_name: str,
+) -> Iterable[importlib_metadata.EntryPoint]:
+    eps = importlib_metadata.entry_points()
+    # The importlib_metadata backport has diverged from the stdlib version, and
+    # emits DeprecationWarning if we use the dict interface
+    if sys.version_info >= (3, 8):
+        return eps.get(group_name, ())
+    else:
+        return cast(
+            Tuple[importlib_metadata.EntryPoint], eps.select(group=group_name)
+        )
+
+
 @lifecycle.lru_cache()
 def get_entry_points(group_name: str) -> Iterable[Any]:
     name_to_entry_points = collections.defaultdict(list)
-    for entry_point in importlib_metadata.entry_points().get(group_name, ()):
+    for entry_point in _select_eps_group(group_name):
         name_to_entry_points[entry_point.name].append(entry_point)
     entry_points: List[importlib_metadata.EntryPoint] = []
     for _, values in sorted(name_to_entry_points.items()):
