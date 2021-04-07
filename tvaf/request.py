@@ -523,6 +523,11 @@ class _TorrentTask(task_lib.Task):
             self._state.update_priorities()
 
         with self._iterator:
+            # This will re-fire any error alerts
+            with ltpy.translate_exceptions():
+                # Does not block
+                handle.clear_error()
+
             with self._lock:
                 # Do this after iterator creation, as it generates alerts
                 self._state.set_handle(handle)
@@ -537,9 +542,13 @@ class _TorrentTask(task_lib.Task):
                     self._close_if_no_requests_locked()
 
     def _run_with_handle(self, handle: lt.torrent_handle) -> None:
+        # The correct place for this is after iterator creation, so we don't
+        # miss a metadata_received_alert. However we want to avoid blocking
+        # iterator processing. We could just always get torrent_info via
+        # resume data alerts, but this is wasteful in the common case.
+        # So we do *both*, for efficiency in the common case and correctness
+        # in the face of race conditions
         with ltpy.translate_exceptions():
-            # Does not block
-            handle.clear_error()
             # DOES block
             ti = handle.torrent_file()
 
