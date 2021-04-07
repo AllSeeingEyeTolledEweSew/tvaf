@@ -191,7 +191,6 @@ class _State:
         for request in requests:
             self._requests[id(request)] = request
             self._index_request(request)
-        self._update_priorities()
 
     def _deindex_request(self, request: Request) -> None:
         if self._ti is None:
@@ -209,7 +208,6 @@ class _State:
             request.set_exception(exception)
             self._requests.pop(id(request))
             self._deindex_request(request)
-        self._update_priorities()
 
     def get_ti(self) -> Optional[lt.torrent_info]:
         return self._ti
@@ -220,7 +218,6 @@ class _State:
         self._ti = ti
         for request in list(self._requests.values()):
             self._index_request(request)
-        self._update_priorities()
 
     def set_handle(self, handle: Optional[lt.torrent_handle]) -> None:
         if handle == self._handle:
@@ -228,7 +225,7 @@ class _State:
         self._handle = handle
         self._apply_priorities()
 
-    def _update_priorities(self) -> None:
+    def update_priorities(self) -> None:
         if self._ti is None:
             return
 
@@ -449,18 +446,23 @@ class _TorrentTask(task_lib.Task):
             if self._terminated.is_set():
                 return False
             self._state.add(*requests)
+            if self._iterator:
+                self._state.update_priorities()
             self._lock.notify_all()
             return True
 
     def discard(self, *requests: Request) -> None:
         with self._lock:
             self._state.discard(*requests, exception=CanceledError())
+            if self._iterator:
+                self._state.update_priorities()
             self._close_if_no_requests_locked()
 
     def _close_if_no_requests_locked(self) -> None:
         if not self._state.has_requests():
             if self._iterator:
                 self._iterator.close()
+                self._iterator = None
 
     def _set_exception(self, exception: BaseException) -> None:
         with self._lock:
@@ -475,6 +477,7 @@ class _TorrentTask(task_lib.Task):
         with self._lock:
             if self._iterator is not None:
                 self._iterator.close()
+                self._iterator = None
             # Normal termination still terminates requests (but doesn't count
             # as the task canceling abnormally)
             if self._state.get_exception() is None:
@@ -490,6 +493,7 @@ class _TorrentTask(task_lib.Task):
         elif isinstance(alert, lt.save_resume_data_alert):
             if alert.params.ti is not None:
                 self._state.set_ti(alert.params.ti)
+                self._state.update_priorities()
         elif isinstance(alert, lt.torrent_error_alert):
             # These are mostly disk errors
             exc = ltpy.exception_from_error_code(alert.error)
@@ -516,6 +520,7 @@ class _TorrentTask(task_lib.Task):
                 lt.metadata_received_alert,
                 handle=handle,
             )
+            self._state.update_priorities()
 
         with self._iterator:
             with self._lock:
