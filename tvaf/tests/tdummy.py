@@ -24,7 +24,6 @@ import libtorrent as lt
 from typing_extensions import TypedDict
 
 from tvaf import multihash
-from tvaf import protocol
 
 PIECE_LENGTH = 16384
 NAME = b"test.txt"
@@ -136,7 +135,7 @@ class Torrent:
 
         self._data: Optional[bytes] = None
         self._pieces: Optional[List[bytes]] = None
-        self._info: Optional[protocol.BDict] = None
+        self._info: Optional[Dict[bytes, Any]] = None
         self._dict: Optional[Dict[bytes, Any]] = None
         self._info_hash_bytes: Optional[bytes] = None
 
@@ -156,7 +155,7 @@ class Torrent:
         return self._pieces
 
     @property
-    def info(self) -> protocol.BDict:
+    def info(self) -> Dict[bytes, Any]:
         if self._info is None:
             self._info = {
                 b"piece length": self.piece_length,
