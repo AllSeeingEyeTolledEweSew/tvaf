@@ -12,14 +12,13 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 import sys
-from typing import Any
-from typing import Dict
-from typing import Tuple
 import unittest
 import unittest.mock
 
 from tvaf import lifecycle
 from tvaf import plugins
+
+from . import lib
 
 if sys.version_info >= (3, 8):
     import importlib.metadata as importlib_metadata
@@ -39,66 +38,16 @@ def raise_pass() -> str:
     raise plugins.Pass()
 
 
-class SelectableGroupsMock:
-    def __init__(
-        self,
-        entry_points: Dict[str, Tuple[importlib_metadata.EntryPoint, ...]],
-    ):
-        self.entry_points = entry_points
-
-    def select(
-        self, *, group: str
-    ) -> Tuple[importlib_metadata.EntryPoint, ...]:
-        return self.entry_points.get(group) or ()
-
-
-# There doesn't seem to be an API to add new distributions or create
-# sys.meta_path finders to return fake distributions. Instead we patch out
-# importlib.metadata.entry_points().
-class EntryPointMockerTest(unittest.TestCase):
+class GetEntryPointsTest(unittest.TestCase):
     def setUp(self) -> None:
-        # Ensure this becomes a copied Dict[str, Tuple[EntryPoint, ...]]
-        self.entry_points: Dict[
-            str, Tuple[importlib_metadata.EntryPoint, ...]
-        ] = {
-            group: tuple(values)
-            for (group, values) in importlib_metadata.entry_points().items()
-        }
-        if sys.version_info >= (3, 8):
-            self.patch = unittest.mock.patch.object(
-                importlib_metadata,
-                "entry_points",
-                return_value=self.entry_points,
-            )
-        else:
-            self.patch = unittest.mock.patch.object(
-                importlib_metadata,
-                "entry_points",
-                return_value=SelectableGroupsMock(self.entry_points),
-            )
-        self.patch.start()
-
-    def add_entry(self, name: str, value: Any, group: Any) -> None:
-        if not isinstance(value, str):
-            value = f"{value.__module__}:{value.__qualname__}"
-        if not isinstance(group, str):
-            group = f"{group.__module__}.{group.__qualname__}"
-        entry = importlib_metadata.EntryPoint(
-            name=name, value=value, group=group
-        )
-        self.entry_points.setdefault(group, ())
-        self.entry_points[group] += (entry,)
+        self.fake_eps = lib.EntryPointFaker()
+        self.fake_eps.enable()
+        self.fake_eps.add("a", return_a, "test")
+        self.fake_eps.add("b", return_b, "test")
 
     def tearDown(self) -> None:
-        self.patch.stop()
+        self.fake_eps.disable()
         lifecycle.clear()
-
-
-class GetEntryPointsTest(EntryPointMockerTest):
-    def setUp(self) -> None:
-        super().setUp()
-        self.add_entry("a", return_a, "test")
-        self.add_entry("b", return_b, "test")
 
     def test_order(self) -> None:
         self.assertEqual(
@@ -117,11 +66,16 @@ class GetEntryPointsTest(EntryPointMockerTest):
         self.assertEqual(list(plugins.get_entry_points("does_not_exist")), [])
 
 
-class LoadEntryPointsTest(EntryPointMockerTest):
+class LoadEntryPointsTest(unittest.TestCase):
     def setUp(self) -> None:
-        super().setUp()
-        self.add_entry("a", return_a, "test")
-        self.add_entry("b", return_b, "test")
+        self.fake_eps = lib.EntryPointFaker()
+        self.fake_eps.enable()
+        self.fake_eps.add("a", return_a, "test")
+        self.fake_eps.add("b", return_b, "test")
+
+    def tearDown(self) -> None:
+        self.fake_eps.disable()
+        lifecycle.clear()
 
     def test_get_plugins(self) -> None:
         plugin_list = plugins.load_entry_points("test")
@@ -129,20 +83,28 @@ class LoadEntryPointsTest(EntryPointMockerTest):
         self.assertEqual(values, ["a", "b"])
 
 
-class CallFirstTest(EntryPointMockerTest):
+class CallFirstTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.fake_eps = lib.EntryPointFaker()
+        self.fake_eps.enable()
+
+    def tearDown(self) -> None:
+        self.fake_eps.disable()
+        lifecycle.clear()
+
     def test_last_returns(self) -> None:
-        self.add_entry("a", raise_pass, "test")
-        self.add_entry("b", return_a, "test")
+        self.fake_eps.add("a", raise_pass, "test")
+        self.fake_eps.add("b", return_a, "test")
         self.assertEqual(plugins.call_first("test"), "a")
 
     def test_first_returns(self) -> None:
-        self.add_entry("a", return_a, "test")
-        self.add_entry("b", raise_pass, "test")
+        self.fake_eps.add("a", return_a, "test")
+        self.fake_eps.add("b", raise_pass, "test")
         self.assertEqual(plugins.call_first("test"), "a")
 
     def test_all_raise_pass(self) -> None:
-        self.add_entry("a", raise_pass, "test")
-        self.add_entry("b", raise_pass, "test")
+        self.fake_eps.add("a", raise_pass, "test")
+        self.fake_eps.add("b", raise_pass, "test")
         with self.assertRaises(plugins.Pass):
             plugins.call_first("test")
 
