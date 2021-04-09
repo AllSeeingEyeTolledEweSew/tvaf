@@ -1,0 +1,12 @@
+{
+    "detail": [
+        {
+            "loc": [
+                "path",
+                "btmh"
+            ],
+            "msg": "only sha1 is supported",
+            "type": "value_error"
+        }
+    ]
+}

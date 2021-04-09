@@ -12,7 +12,6 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 import enum
-from typing import NamedTuple
 
 # I think the official python multihash implementation has some issues, so I
 # made my own.
@@ -23,6 +22,7 @@ class Func(enum.IntEnum):
     sha2_256 = 0x12
 
 
-class Multihash(NamedTuple):
-    func: int
-    digest: bytes
+class Multihash:
+    def __init__(self, func: int, digest: bytes):
+        self.func = func
+        self.digest = digest

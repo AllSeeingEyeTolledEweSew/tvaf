@@ -1,0 +1,12 @@
+{
+    "detail": [
+        {
+            "loc": [
+                "path",
+                "btmh"
+            ],
+            "msg": "wrong sha1 length",
+            "type": "value_error"
+        }
+    ]
+}
