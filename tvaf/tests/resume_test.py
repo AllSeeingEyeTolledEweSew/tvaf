@@ -66,7 +66,9 @@ class IterResumeDataTest(unittest.TestCase):
 
         def write(torrent: tdummy.Torrent) -> None:
             self.path.mkdir(parents=True, exist_ok=True)
-            path = self.path.joinpath(torrent.info_hash).with_suffix(".resume")
+            path = self.path.joinpath(str(torrent.sha1_hash)).with_suffix(
+                ".resume"
+            )
             atp = torrent.atp()
             atp.ti = None
             atp_data = lt.bencode(lt.write_resume_data(atp))

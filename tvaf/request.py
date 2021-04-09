@@ -34,7 +34,6 @@ from tvaf import driver as driver_lib
 from tvaf import ltpy
 from tvaf import resume as resume_lib
 from tvaf import task as task_lib
-from tvaf import types
 from tvaf import util
 from tvaf import xmemoryview as xmv
 
@@ -77,7 +76,7 @@ class Request:
     def __init__(
         self,
         *,
-        info_hash: types.InfoHash,
+        info_hash: lt.sha1_hash,
         start: int,
         stop: int,
         mode: Mode,
@@ -422,7 +421,7 @@ class _TorrentTask(task_lib.Task):
     def __init__(
         self,
         *,
-        info_hash: types.InfoHash,
+        info_hash: lt.sha1_hash,
         alert_driver: driver_lib.AlertDriver,
         resume_service: resume_lib.ResumeService,
         session: lt.session,
@@ -592,9 +591,8 @@ class _TorrentTask(task_lib.Task):
             self._prev_task = None
 
         with ltpy.translate_exceptions():
-            info_hash = lt.sha1_hash(bytes.fromhex(self._info_hash))
             # DOES block
-            handle = self._session.find_torrent(info_hash)
+            handle = self._session.find_torrent(self._info_hash)
 
         if not handle.is_valid():
             with self._lock:
@@ -647,14 +645,14 @@ class RequestService(task_lib.Task):
         # As of 3.8, WeakValueDictionary is unsubscriptable
         self._torrent_tasks = (
             WeakValueDictionary()
-        )  # type: WeakValueDictionary[types.InfoHash, _TorrentTask]
+        )  # type: WeakValueDictionary[lt.sha1_hash, _TorrentTask]
 
         self._atp_settings: Mapping[str, Any] = {}
 
     def add_request(
         self,
         *,
-        info_hash: types.InfoHash,
+        info_hash: lt.sha1_hash,
         start: int,
         stop: int,
         mode: Mode,

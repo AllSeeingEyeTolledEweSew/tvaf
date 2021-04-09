@@ -25,7 +25,6 @@ from typing_extensions import TypedDict
 
 from tvaf import multihash
 from tvaf import protocol
-from tvaf import types
 
 PIECE_LENGTH = 16384
 NAME = b"test.txt"
@@ -199,10 +198,6 @@ class Torrent:
                 lt.bencode(self.info)
             ).digest()
         return self._info_hash_bytes
-
-    @property
-    def info_hash(self) -> types.InfoHash:
-        return types.InfoHash(self.info_hash_bytes.hex())
 
     @property
     def sha1_hash(self) -> lt.sha1_hash:

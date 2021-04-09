@@ -30,7 +30,6 @@ from tvaf import plugins
 from tvaf import request as request_lib
 from tvaf import services
 from tvaf import torrent_info
-from tvaf import types
 
 ROUTER = fastapi.APIRouter(prefix="/v1", tags=["data access"])
 
@@ -113,7 +112,7 @@ def read_file(
 
         request_service = services.get_request_service()
         request = request_service.add_request(
-            info_hash=types.InfoHash(btmh.digest.hex()),
+            info_hash=lt.sha1_hash(btmh.digest),
             start=start,
             stop=stop,
             mode=request_lib.Mode.READ,

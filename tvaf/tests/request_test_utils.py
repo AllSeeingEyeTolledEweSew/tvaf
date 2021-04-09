@@ -132,7 +132,7 @@ class RequestServiceTestCase(unittest.TestCase):
 
         return self.service.add_request(
             mode=mode,
-            info_hash=self.torrent.info_hash,
+            info_hash=self.torrent.sha1_hash,
             start=start,
             stop=stop,
             get_atp=get_atp_with_path,
@@ -140,9 +140,7 @@ class RequestServiceTestCase(unittest.TestCase):
 
     def wait_for_torrent(self) -> lt.torrent_handle:
         for _ in lib.loop_until_timeout(5, msg="add torrent"):
-            handle = self.session.find_torrent(
-                lt.sha1_hash(bytes.fromhex(self.torrent.info_hash))
-            )
+            handle = self.session.find_torrent(self.torrent.sha1_hash)
             if handle.is_valid():
                 return handle
         raise AssertionError("unreachable")
