@@ -19,6 +19,7 @@ import enum
 import logging
 import threading
 from typing import Any
+from typing import Callable
 from typing import Dict
 from typing import Iterable
 from typing import Iterator
@@ -80,13 +81,13 @@ class Request:
         start: int,
         stop: int,
         mode: Mode,
-        configure_atp: types.ConfigureATP,
+        get_atp: Callable[[], lt.add_torrent_params],
     ):
         self.info_hash = info_hash
         self.start = start
         self.stop = stop
         self.mode = mode
-        self.configure_atp = configure_atp
+        self.get_atp = get_atp
 
         self._condition = threading.Condition()
         self._chunks: Dict[int, xmv.MemoryView] = {}
@@ -603,10 +604,8 @@ class _TorrentTask(task_lib.Task):
                 # Should we use different logic?
                 request = next(self._state.iter_requests())
 
-            atp = lt.add_torrent_params()
-            atp.info_hash = info_hash
             try:
-                request.configure_atp(atp)
+                atp = request.get_atp()
             except Exception as exc:
                 raise FetchError() from exc
 
@@ -659,14 +658,14 @@ class RequestService(task_lib.Task):
         start: int,
         stop: int,
         mode: Mode,
-        configure_atp: types.ConfigureATP,
+        get_atp: Callable[[], lt.add_torrent_params],
     ) -> Request:
         request = Request(
             info_hash=info_hash,
             start=start,
             stop=stop,
             mode=mode,
-            configure_atp=configure_atp,
+            get_atp=get_atp,
         )
 
         with self._lock:

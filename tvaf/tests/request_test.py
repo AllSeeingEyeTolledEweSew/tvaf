@@ -15,6 +15,7 @@ import concurrent.futures
 import os
 import os.path
 import tempfile
+from typing import Any
 
 import libtorrent as lt
 
@@ -29,7 +30,7 @@ class DummyException(Exception):
     pass
 
 
-def _raise_dummy() -> None:
+def _raise_dummy() -> Any:
     raise DummyException()
 
 
@@ -83,7 +84,7 @@ class TestAddRemove(request_test_utils.RequestServiceTestCase):
             req.read(timeout=5)
 
     def test_fetch_error(self) -> None:
-        req = self.add_req(configure_atp=lambda atp: _raise_dummy())
+        req = self.add_req(get_atp=_raise_dummy)
         with self.assertRaises(request_lib.FetchError):
             req.read(timeout=5)
 
@@ -194,11 +195,7 @@ class TestRead(request_test_utils.RequestServiceTestCase):
         with open(path, mode="w"):
             pass
 
-        def configure_atp(atp: lt.add_torrent_params) -> None:
-            self.torrent.configure_atp(atp)
-            atp.save_path = path
-
-        req = self.add_req(configure_atp=configure_atp)
+        req = self.add_req(save_path=path)
         self.feed_pieces()
 
         with self.assertRaises(NotADirectoryError):

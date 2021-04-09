@@ -20,6 +20,7 @@ from typing import Optional
 from typing import Union
 
 import fastapi
+import libtorrent as lt
 from pydantic import NonNegativeInt
 import starlette.responses
 import starlette.types
@@ -103,13 +104,20 @@ def read_file(
     iterator: Iterator[bytes] = iter(())
     cleanup: Optional[starlette.background.BackgroundTask] = None
     if request.method == "GET":
+
+        def get_atp() -> lt.add_torrent_params:
+            atp = services.get_default_atp()
+            configure_atp(atp)
+            services.configure_atp(atp)
+            return atp
+
         request_service = services.get_request_service()
         request = request_service.add_request(
             info_hash=types.InfoHash(btmh.digest.hex()),
             start=start,
             stop=stop,
             mode=request_lib.Mode.READ,
-            configure_atp=configure_atp,
+            get_atp=get_atp,
         )
         iterator = reader(request)
         cleanup = starlette.background.BackgroundTask(

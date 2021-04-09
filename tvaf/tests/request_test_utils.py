@@ -11,8 +11,9 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-import os
 import tempfile
+from typing import Callable
+from typing import Optional
 import unittest
 
 import libtorrent as lt
@@ -58,8 +59,6 @@ class RequestServiceTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.torrent = tdummy.DEFAULT
         self.tempdir = tempfile.TemporaryDirectory()
-        self.cwd = os.getcwd()
-        os.chdir(self.tempdir.name)
         self.init_session()
 
     def teardown_session(self) -> None:
@@ -93,7 +92,6 @@ class RequestServiceTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.teardown_session()
-        os.chdir(self.cwd)
         self.tempdir.cleanup()
 
     def feed_pieces(self, piece_indexes=None) -> None:
@@ -114,20 +112,30 @@ class RequestServiceTestCase(unittest.TestCase):
         mode=request_lib.Mode.READ,
         start=None,
         stop=None,
-        configure_atp=None,
+        get_atp: Optional[Callable[[], lt.add_torrent_params]] = None,
+        save_path=None,
     ) -> request_lib.Request:
         if start is None:
             start = 0
         if stop is None:
             stop = self.torrent.length
-        if configure_atp is None:
-            configure_atp = self.torrent.configure_atp
+        if get_atp is None:
+            get_atp = self.torrent.atp
+        if save_path is None:
+            save_path = self.tempdir.name
+
+        def get_atp_with_path() -> lt.add_torrent_params:
+            assert get_atp is not None
+            atp = get_atp()
+            atp.save_path = save_path
+            return atp
+
         return self.service.add_request(
             mode=mode,
             info_hash=self.torrent.info_hash,
             start=start,
             stop=stop,
-            configure_atp=configure_atp,
+            get_atp=get_atp_with_path,
         )
 
     def wait_for_torrent(self) -> lt.torrent_handle:

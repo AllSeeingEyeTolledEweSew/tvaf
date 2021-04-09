@@ -11,11 +11,6 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-from typing import Callable
 from typing import NewType
-
-import libtorrent as lt
-
-ConfigureATP = Callable[[lt.add_torrent_params], None]
 
 InfoHash = NewType("InfoHash", str)

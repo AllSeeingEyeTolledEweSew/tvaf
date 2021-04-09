@@ -12,6 +12,7 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 from typing import Any
+from typing import Callable
 from typing import cast
 from typing import Dict
 from typing import List
@@ -25,7 +26,6 @@ from tvaf import ltpy
 from tvaf import multihash
 from tvaf import plugins
 from tvaf import services
-from tvaf.types import ConfigureATP
 
 # design thoughts:
 
@@ -108,9 +108,11 @@ def get_parsed_info(btmh: multihash.Multihash) -> Dict[bytes, Any]:
     )
 
 
-def get_configure_atp(btmh: multihash.Multihash) -> ConfigureATP:
+def get_configure_atp(
+    btmh: multihash.Multihash,
+) -> Callable[[lt.add_torrent_params], Any]:
     return cast(
-        ConfigureATP,
+        Callable[[lt.add_torrent_params], Any],
         plugins.call_first("tvaf.torrent_info.get_configure_atp", btmh),
     )
 
