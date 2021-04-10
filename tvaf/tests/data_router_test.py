@@ -100,6 +100,22 @@ class DataTest(AppTest, lib.TestCase):
         super().tearDown()
         self.torrent.entry_point_faker.disable()
 
+    def test_already_downloaded(self) -> None:
+        atp = self.torrent.atp()
+        atp.flags &= ~lt.torrent_flags.paused
+        handle = services.get_session().add_torrent(atp)
+        # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
+        # checking silently fails in libtorrent 1.2.8.
+        request_test_utils.wait_done_checking_or_error(handle)
+        for i, piece in enumerate(self.torrent.pieces):
+            # NB: bug in libtorrent where add_piece accepts str but not bytes
+            handle.add_piece(i, piece.decode(), 0)
+
+        r = self.client.get(f"/v1/btmh/{self.torrent.btmh}/i/0")
+        self.assertTrue(r.ok)
+        self.assertEqual(r.content, self.torrent.files[0].data)
+        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+
     def test_download_from_seed(self) -> None:
         seed = lib.create_isolated_session_service().session
         seed_dir = tempfile.TemporaryDirectory()
