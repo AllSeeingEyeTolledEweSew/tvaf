@@ -5,7 +5,7 @@
                 "path",
                 "btmh"
             ],
-            "msg": "only sha1 is supported",
+            "msg": "invalid varint",
             "type": "value_error"
         }
     ]

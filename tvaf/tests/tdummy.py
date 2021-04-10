@@ -14,16 +14,24 @@
 import hashlib
 import random
 from typing import Any
+from typing import Callable
 from typing import Dict
 from typing import List
+from typing import Mapping
 from typing import Optional
+from typing import Sequence
+from typing import Tuple
 from typing import Type
 from typing import TypeVar
+from typing import Union
 
 import libtorrent as lt
 from typing_extensions import TypedDict
 
 from tvaf import multihash
+from tvaf import plugins
+
+from . import lib
 
 PIECE_LENGTH = 16384
 NAME = b"test.txt"
@@ -138,6 +146,7 @@ class Torrent:
         self._info: Optional[Dict[bytes, Any]] = None
         self._dict: Optional[Dict[bytes, Any]] = None
         self._info_hash_bytes: Optional[bytes] = None
+        self._eps: Optional[lib.EntryPointFaker] = None
 
     @property
     def data(self) -> bytes:
@@ -214,11 +223,106 @@ class Torrent:
         self.configure_atp(atp)
         return atp
 
+    @property
+    def entry_point_faker(self) -> lib.EntryPointFaker:
+        if self._eps is None:
+            self._eps = lib.EntryPointFaker()
+            self._eps.add(
+                "_tdummy",
+                self.get_configure_atp,
+                "tvaf.torrent_info.get_configure_atp",
+            )
+            self._eps.add(
+                "_tdummy",
+                self.get_num_files,
+                "tvaf.torrent_info.get_num_files",
+            )
+            self._eps.add(
+                "_tdummy",
+                self.check_file_index,
+                "tvaf.torrent_info.check_file_index",
+            )
+            self._eps.add(
+                "_tdummy",
+                self.get_file_bounds,
+                "tvaf.torrent_info.get_file_bounds",
+            )
+            self._eps.add(
+                "_tdummy",
+                self.get_file_path,
+                "tvaf.torrent_info.get_file_path",
+            )
+            self._eps.add(
+                "_tdummy",
+                self.get_file_name,
+                "tvaf.torrent_info.get_file_name",
+            )
+            self._eps.add(
+                "_tdummy",
+                self.get_bencoded_info,
+                "tvaf.torrent_info.get_bencoded_info",
+            )
+            self._eps.add(
+                "_tdummy",
+                self.get_parsed_info,
+                "tvaf.torrent_info.get_parsed_info",
+            )
+        return self._eps
+
     def configure_atp(self, atp: lt.add_torrent_params) -> None:
         # this is necessary so that
         # atp == read_resume_data(write_resume_data(atp))
         atp.info_hash = self.sha1_hash
         atp.ti = self.torrent_info()
+
+    def _check_btmh(self, btmh: multihash.Multihash) -> None:
+        if btmh != self.btmh:
+            raise plugins.Pass()
+
+    def get_configure_atp(
+        self, btmh: multihash.Multihash
+    ) -> Callable[[lt.add_torrent_params], Any]:
+        self._check_btmh(btmh)
+        return self.configure_atp
+
+    def get_num_files(self, btmh: multihash.Multihash) -> int:
+        self._check_btmh(btmh)
+        return len(self.files)
+
+    def check_file_index(
+        self, btmh: multihash.Multihash, file_index: int
+    ) -> None:
+        self._check_btmh(btmh)
+        self.files[file_index]
+
+    def get_file_bounds(
+        self, btmh: multihash.Multihash, file_index: int
+    ) -> Tuple[int, int]:
+        self._check_btmh(btmh)
+        file_info = self.files[file_index]
+        return (file_info.start, file_info.stop)
+
+    def get_file_path(
+        self, btmh: multihash.Multihash, file_index: int
+    ) -> Sequence[Union[str, bytes]]:
+        self._check_btmh(btmh)
+        return self.files[file_index].path_split
+
+    def get_file_name(
+        self, btmh: multihash.Multihash, file_index: int
+    ) -> Union[str, bytes]:
+        self._check_btmh(btmh)
+        return self.files[file_index].path_split[-1]
+
+    def get_bencoded_info(self, btmh: multihash.Multihash) -> bytes:
+        self._check_btmh(btmh)
+        return lt.bencode(self.info)
+
+    def get_parsed_info(
+        self, btmh: multihash.Multihash
+    ) -> Mapping[bytes, Any]:
+        self._check_btmh(btmh)
+        return self.info
 
 
 DEFAULT = Torrent.single_file(

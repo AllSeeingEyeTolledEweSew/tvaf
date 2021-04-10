@@ -16,6 +16,8 @@ from typing import Callable
 from typing import cast
 from typing import Dict
 from typing import List
+from typing import Mapping
+from typing import Sequence
 from typing import Tuple
 from typing import Union
 
@@ -72,9 +74,9 @@ def get_file_bounds(
 @lifecycle.lru_cache()
 def get_file_path(
     btmh: multihash.Multihash, file_index: int
-) -> List[Union[str, bytes]]:
+) -> Sequence[Union[str, bytes]]:
     return cast(
-        List[Union[str, bytes]],
+        Sequence[Union[str, bytes]],
         plugins.call_first(
             "tvaf.torrent_info.get_file_path", btmh, file_index
         ),
@@ -101,7 +103,7 @@ def get_bencoded_info(btmh: multihash.Multihash) -> bytes:
 
 
 @lifecycle.lru_cache()
-def get_parsed_info(btmh: multihash.Multihash) -> Dict[bytes, Any]:
+def get_parsed_info(btmh: multihash.Multihash) -> Mapping[bytes, Any]:
     return cast(
         Dict[bytes, Any],
         plugins.call_first("tvaf.torrent_info.get_parsed_info", btmh),
@@ -133,7 +135,7 @@ def get_file_name_default(
     return path[-1]
 
 
-def get_parsed_info_default(btmh: multihash.Multihash) -> Dict[bytes, Any]:
+def get_parsed_info_default(btmh: multihash.Multihash) -> Mapping[bytes, Any]:
     info = cast(Dict[bytes, Any], lt.bdecode(get_bencoded_info(btmh)))
     info.pop(b"pieces", None)
     return info
@@ -165,7 +167,7 @@ def get_bencoded_info_from_session(btmh: multihash.Multihash) -> bytes:
 
 def get_file_path_from_parsed_info(
     btmh: multihash.Multihash, file_index: int
-) -> List[Union[str, bytes]]:
+) -> Sequence[Union[str, bytes]]:
     info = get_parsed_info(btmh)
     check_file_index(btmh, file_index)
     path: List[Union[str, bytes]] = []

@@ -12,12 +12,8 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 import logging
-from typing import Any
-from typing import Callable
-from typing import Dict
 from typing import Iterator
 from typing import Optional
-from typing import Union
 
 import fastapi
 import libtorrent as lt
@@ -36,27 +32,6 @@ ROUTER = fastapi.APIRouter(prefix="/v1", tags=["data access"])
 _LOG = logging.getLogger(__name__)
 
 
-class MultihashHex(multihash.Multihash):
-    @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
-        field_schema.update({"type": "string", "format": "multihash-hex"})
-
-    @classmethod
-    def __get_validators__(cls) -> Iterator[Callable[..., Any]]:
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, value: Union[str, bytes]) -> multihash.Multihash:
-        if isinstance(value, str):
-            value = bytes.fromhex(value)
-        if value.startswith(b"\x11\x14"):
-            digest = value[2:]
-            if len(digest) != 20:
-                raise ValueError("wrong sha1 length")
-            return multihash.Multihash(multihash.Func.sha1, digest)
-        raise ValueError("only sha1 is supported")
-
-
 class AlwaysRunStreamingResponse(starlette.responses.StreamingResponse):
     async def __call__(
         self,
@@ -65,7 +40,7 @@ class AlwaysRunStreamingResponse(starlette.responses.StreamingResponse):
         send: starlette.types.Send,
     ) -> None:
         try:
-            super().__call__(scope, receive, send)
+            await super().__call__(scope, receive, send)
         except Exception:
             # background gets run in the base class if there are no errors
             await self.background()
@@ -84,20 +59,28 @@ def reader(request: request_lib.Request) -> Iterator[bytes]:
 
 @ROUTER.api_route("/btmh/{btmh}/i/{file_index}", methods=("GET", "HEAD"))
 def read_file(
-    btmh: MultihashHex, file_index: NonNegativeInt, request: fastapi.Request
+    btmh: multihash.Multihash,
+    file_index: NonNegativeInt,
+    request: fastapi.Request,
 ):
+    if btmh.func != multihash.Func.sha1:
+        raise fastapi.HTTPException(
+            status_code=fastapi.status.HTTP_404_NOT_FOUND,
+            detail="only sha1 info-hashes supported at this time",
+        )
+
     try:
         start, stop = torrent_info.get_file_bounds(btmh, file_index)
         configure_atp = torrent_info.get_configure_atp(btmh)
     except plugins.Pass:
         raise fastapi.HTTPException(
             status_code=fastapi.status.HTTP_404_NOT_FOUND,
-            detail=f"Unknown torrent: {btmh.digest.hex()}",
+            detail=f"Unknown torrent: {btmh}",
         )
 
     headers = {
         "Content-Type": "application/octet-stream",
-        "Content-Length": stop - start,
+        "Content-Length": str(stop - start),
     }
 
     iterator: Iterator[bytes] = iter(())

@@ -239,7 +239,7 @@ class GetBencodedAndParsedInfoTest(TorrentInfoTest):
     def test_accurate(self) -> None:
         expected_info = dict(self.tdummy.info)
         expected_info.pop(b"pieces", None)
-        got_info = torrent_info.get_parsed_info(self.btmh)
+        got_info = dict(torrent_info.get_parsed_info(self.btmh))
         got_info.pop(b"pieces", None)
         self.assertEqual(got_info, expected_info)
 
