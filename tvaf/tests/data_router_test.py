@@ -100,6 +100,16 @@ class DataTest(AppTest, lib.TestCase):
         super().tearDown()
         self.torrent.entry_point_faker.disable()
 
+    def test_head_request(self) -> None:
+        # HEAD request should work
+        r = self.client.head(f"/v1/btmh/{self.torrent.btmh}/i/0")
+        self.assertTrue(r.ok)
+        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+
+        # torrent shouldn't be in the session
+        handle = services.get_session().find_torrent(self.torrent.sha1_hash)
+        self.assertFalse(handle.is_valid())
+
     def test_already_downloaded(self) -> None:
         atp = self.torrent.atp()
         atp.flags &= ~lt.torrent_flags.paused
