@@ -16,14 +16,11 @@
 import collections
 import collections.abc
 import enum
+import errno
 import logging
 import threading
-from typing import Any
-from typing import Callable
 from typing import Dict
 from typing import Iterable
-from typing import Iterator
-from typing import Mapping
 from typing import Optional
 from typing import Set
 from weakref import WeakValueDictionary
@@ -42,51 +39,31 @@ _LOG = logging.getLogger(__name__)
 DEFAULT_DOWNLOAD_DIR_NAME = "downloads"
 
 
+def _mk_cancelederror() -> ltpy.CanceledError:
+    return ltpy.CanceledError(
+        lt.error_code(errno.ECANCELED, lt.generic_category())
+    )
+
+
 class Mode(enum.Enum):
 
     READ = "read"
     READAHEAD = "readahead"
 
 
-def _raise_notimplemented() -> None:
-    raise NotImplementedError
-
-
-class Error(Exception):
-
-    pass
-
-
-class FetchError(Error):
-
-    pass
-
-
-class CanceledError(Error):
-
-    pass
-
-
-class TorrentRemovedError(CanceledError):
-
-    pass
-
-
 class Request:
     def __init__(
         self,
         *,
-        info_hash: lt.sha1_hash,
+        handle: lt.torrent_handle,
         start: int,
         stop: int,
         mode: Mode,
-        get_atp: Callable[[], lt.add_torrent_params],
     ):
-        self.info_hash = info_hash
+        self.handle = handle
         self.start = start
         self.stop = stop
         self.mode = mode
-        self.get_atp = get_atp
 
         self._condition = threading.Condition()
         self._chunks: Dict[int, xmv.MemoryView] = {}
@@ -155,9 +132,9 @@ class _State:
 
     DEADLINE_INTERVAL = 1000
 
-    def __init__(self):
+    def __init__(self, handle: lt.torrent_handle):
+        self._handle = handle
         self._ti: Optional[lt.torrent_info] = None
-        self._handle: Optional[lt.torrent_handle] = None
         # OrderedDict is to preserve FIFO order for satisfying requests. We use
         # a mapping like {id(obj): obj} to emulate an ordered set
         # NB: As of 3.8, OrderedDict is not subscriptable
@@ -219,12 +196,6 @@ class _State:
         for request in list(self._requests.values()):
             self._index_request(request)
 
-    def set_handle(self, handle: Optional[lt.torrent_handle]) -> None:
-        if handle == self._handle:
-            return
-        self._handle = handle
-        self._apply_priorities()
-
     def update_priorities(self) -> None:
         if self._ti is None:
             return
@@ -279,7 +250,7 @@ class _State:
     # reset_piece_deadline(), except that the priority becomes 0 instead of 1
 
     def _apply_priorities_inner(self) -> None:
-        if self._handle is None or self._ti is None:
+        if self._ti is None:
             return
 
         if self._piece_queue:
@@ -310,11 +281,8 @@ class _State:
         self._handle.prioritize_pieces(priorities)
 
     def _apply_priorities(self) -> None:
-        try:
-            with ltpy.translate_exceptions():
-                self._apply_priorities_inner()
-        except ltpy.InvalidTorrentHandleError:
-            pass
+        with ltpy.translate_exceptions():
+            self._apply_priorities_inner()
 
     def on_read_piece(
         self, piece: int, data: bytes, exception: Optional[BaseException]
@@ -339,14 +307,10 @@ class _State:
 
     def set_exception(self, exception: BaseException) -> None:
         self.discard(*self._requests.values(), exception=exception)
-        self.set_handle(None)
         self._exception = exception
 
     def get_exception(self) -> Optional[BaseException]:
         return self._exception
-
-    def iter_requests(self) -> Iterator[Request]:
-        return iter(self._requests.values())
 
     def has_requests(self) -> bool:
         return bool(self._requests)
@@ -360,136 +324,85 @@ class _State:
     # TODO: periodically reissue deadlines
 
 
-class _Cleanup:
+class _Task(task_lib.Task):
+    # NB: after the last request is removed, we must no longer mutate the
+    # torrent. To achieve this, only mutate the torrent with the lock held.
     def __init__(
         self,
         *,
         handle: lt.torrent_handle,
-        session: lt.session,
-        alert_driver: driver_lib.AlertDriver,
-    ):
-        self._handle = handle
-        self._session = session
-        self._alert_driver = alert_driver
-
-    def _cleanup_inner(self) -> None:
-        # TODO: what should we do in checking state?
-
-        # DOES block
-        status = self._handle.status()
-        if status.total_done != 0:
-            return
-        # DOES block
-        if any(self._handle.get_piece_priorities()):
-            return
-
-        # We have no whole pieces, and none are downloading. Do a graceful
-        # pause to drain outstanding block requests
-        if status.flags & lt.torrent_flags.paused == 0:
-            iterator = self._alert_driver.iter_alerts(
-                lt.alert_category.status,
-                lt.torrent_paused_alert,
-                lt.torrent_removed_alert,
-            )
-            with iterator:
-                # Does not block
-                self._handle.pause(flags=lt.torrent_handle.graceful_pause)
-                for alert in iterator:
-                    if isinstance(alert, lt.torrent_removed_alert):
-                        return
-                    if isinstance(alert, lt.torrent_paused_alert):
-                        break
-
-            status = self._handle.status()
-            if status.total_done != 0:
-                # We downloaded some pieces due to graceful pause!
-                self._handle.resume()
-                return
-
-        # Torrent has no data, no pieces prioritized, and all peers are
-        # drained. Clear to delete
-        self._session.remove_torrent(
-            self._handle, option=lt.options_t.delete_files
-        )
-
-    def cleanup(self) -> None:
-        with ltpy.translate_exceptions():
-            self._cleanup_inner()
-
-
-class _TorrentTask(task_lib.Task):
-    def __init__(
-        self,
-        *,
-        info_hash: lt.sha1_hash,
         alert_driver: driver_lib.AlertDriver,
         resume_service: resume_lib.ResumeService,
-        session: lt.session,
-        prev_task: task_lib.Task = None,
     ):
-        super().__init__(title=f"request handler for {info_hash}")
-        self._info_hash = info_hash
-        self._alert_driver = alert_driver
+        super().__init__(title=f"request handler for {handle.info_hash()}")
+        self._handle = handle
         self._resume_service = resume_service
-        self._session = session
-        self._prev_task = prev_task
 
-        # TODO: fixup typing here
-        self._lock: threading.Condition = threading.Condition(  # type: ignore
-            threading.RLock()
+        self._state = _State(handle)
+        # The proper place for this is after iterator creation, so we don't
+        # miss a metadata_received_alert, but this would block alert
+        # processing. We could always get it from save_resume_data_alert, but
+        # this adds extra alert processing. So we do *both*: get torrent_info
+        # now for efficiency in the common case, and fire save_resume_data for
+        # correctness.
+        # DOES block
+        ti = handle.torrent_file()
+        if ti is not None:
+            self._state.set_ti(ti)
+        self._iterator = alert_driver.iter_alerts(
+            lt.alert_category.status,
+            lt.read_piece_alert,
+            lt.torrent_removed_alert,
+            lt.save_resume_data_alert,
+            lt.torrent_error_alert,
+            lt.metadata_received_alert,
+            handle=handle,
         )
-        self._state = _State()
-        self._iterator: Optional[driver_lib.Iterator] = None
 
     def add(self, *requests: Request) -> bool:
         with self._lock:
             if self._terminated.is_set():
                 return False
             self._state.add(*requests)
-            if self._iterator:
-                self._state.update_priorities()
-            self._lock.notify_all()
+            self._state.update_priorities()
             return True
 
     def discard(self, *requests: Request) -> None:
         with self._lock:
-            self._state.discard(*requests, exception=CanceledError())
-            if self._iterator:
-                self._state.update_priorities()
-            self._close_if_no_requests_locked()
-
-    def _close_if_no_requests_locked(self) -> None:
-        if not self._state.has_requests():
-            if self._iterator:
-                self._iterator.close()
-                self._iterator = None
+            self._state.discard(
+                *requests,
+                exception=_mk_cancelederror(),
+            )
+            self._state.update_priorities()
+            if not self._state.has_requests():
+                self.terminate()
 
     def _set_exception(self, exception: BaseException) -> None:
         with self._lock:
-            # More helpful exception. Do this here so that external
-            # terminations (due to future linking) get translated
-            if isinstance(exception, ltpy.InvalidTorrentHandleError):
-                exception = TorrentRemovedError()
             super()._set_exception(exception)
             self._state.set_exception(exception)
+            self._state.update_priorities()
 
     def _terminate(self) -> None:
         with self._lock:
-            if self._iterator is not None:
-                self._iterator.close()
-                self._iterator = None
+            self._iterator.close()
             # Normal termination still terminates requests (but doesn't count
             # as the task canceling abnormally)
             if self._state.get_exception() is None:
-                self._state.set_exception(CanceledError())
-            self._lock.notify_all()
+                self._state.set_exception(_mk_cancelederror())
+                self._state.update_priorities()
 
     def _handle_alert_locked(self, alert: lt.alert) -> None:
         if isinstance(alert, lt.read_piece_alert):
             exc = ltpy.exception_from_error_code(alert.error)
             self._state.on_read_piece(alert.piece, alert.buffer, exc)
         elif isinstance(alert, lt.torrent_removed_alert):
-            raise TorrentRemovedError()
+            raise ltpy.InvalidTorrentHandleError(
+                lt.error_code(
+                    ltpy.LibtorrentErrorValue.INVALID_TORRENT_HANDLE,
+                    lt.libtorrent_category(),
+                )
+            )
         elif isinstance(alert, lt.save_resume_data_alert):
             if alert.params.ti is not None:
                 self._state.set_ti(alert.params.ti)
@@ -504,126 +417,30 @@ class _TorrentTask(task_lib.Task):
                 alert.handle, flags=lt.torrent_handle.save_info_dict
             )
 
-    def _handle_alerts_until_no_requests(
-        self, handle: lt.torrent_handle
-    ) -> None:
-        with self._lock:
-            if not self._state.has_requests():
-                return
-            _LOG.debug("we have active requests, watching alerts")
-            self._iterator = self._alert_driver.iter_alerts(
-                lt.alert_category.status,
-                lt.read_piece_alert,
-                lt.torrent_removed_alert,
-                lt.save_resume_data_alert,
-                lt.torrent_error_alert,
-                lt.metadata_received_alert,
-                handle=handle,
-            )
-            self._state.update_priorities()
-
+    def _run(self) -> None:
         with self._iterator:
-            # This will re-fire any error alerts
-            with ltpy.translate_exceptions():
-                # Does not block
-                handle.clear_error()
-
             with self._lock:
-                # Do this after iterator creation, as it generates alerts
-                self._state.set_handle(handle)
+                if self._terminated.is_set():
+                    return
+
+                with ltpy.translate_exceptions():
+                    # This will re-fire any error alerts
+                    # Does not block
+                    self._handle.clear_error()
+
+                self._state.update_priorities()
+
+                # See comment in constructor
                 if self._state.get_ti() is None:
                     self._resume_service.save(
-                        handle, flags=lt.torrent_handle.save_info_dict
+                        self._handle, flags=lt.torrent_handle.save_info_dict
                     )
 
             for alert in self._iterator:
                 with self._lock:
+                    if self._terminated.is_set():
+                        return
                     self._handle_alert_locked(alert)
-                    self._close_if_no_requests_locked()
-
-    def _run_with_handle(self, handle: lt.torrent_handle) -> None:
-        # The correct place for this is after iterator creation, so we don't
-        # miss a metadata_received_alert. However we want to avoid blocking
-        # iterator processing. We could just always get torrent_info via
-        # resume data alerts, but this is wasteful in the common case.
-        # So we do *both*, for efficiency in the common case and correctness
-        # in the face of race conditions
-        with ltpy.translate_exceptions():
-            # DOES block
-            ti = handle.torrent_file()
-
-        with self._lock:
-            if ti is not None:
-                self._state.set_ti(ti)
-
-        # Loop until we have no requests for 60s, or are terminated
-        while not self._terminated.is_set():
-            self._handle_alerts_until_no_requests(handle)
-
-            _LOG.debug("no more requests, waiting to cleanup")
-            # Instead of switching between an active iterator and a condition
-            # wait, it would be nicer to "select" on the iterator and a timeout
-            with self._lock:
-
-                def wakeup() -> bool:
-                    return (
-                        self._terminated.is_set() or self._state.has_requests()
-                    )
-
-                if not self._lock.wait_for(wakeup, timeout=60):
-                    self.terminate()
-
-        _LOG.debug("cleaning up")
-        # We won't run cleanup if we get an exception. This is probably for the
-        # best
-        cleanup = _Cleanup(
-            handle=handle,
-            session=self._session,
-            alert_driver=self._alert_driver,
-        )
-        cleanup.cleanup()
-
-    def _run(self) -> None:
-        # The previous task must have been terminated, but it may still be
-        # touching the handle. Wait for it to finish.
-        if self._prev_task is not None:
-            self._prev_task.join()
-            self._prev_task = None
-
-        with ltpy.translate_exceptions():
-            # DOES block
-            handle = self._session.find_torrent(self._info_hash)
-
-        if not handle.is_valid():
-            with self._lock:
-                if not self._state.has_requests():
-                    self.terminate()
-                    return
-                # Should we use different logic?
-                request = next(self._state.iter_requests())
-
-            try:
-                atp = request.get_atp()
-            except Exception as exc:
-                raise FetchError() from exc
-
-            atp.flags &= ~(
-                lt.torrent_flags.paused | lt.torrent_flags.duplicate_is_error
-            )
-            # TODO: how do we support this with magnet links?
-            assert atp.ti is not None
-            # atp.file_priorities = [0] * atp.ti.num_files()
-            atp.piece_priorities = [0] * atp.ti.num_pieces()
-
-            # If we fail, should we retry with a different request?
-            with ltpy.translate_exceptions():
-                # DOES block
-                handle = self._session.add_torrent(atp)
-
-            # The "victim" request may have been removed while we were
-            # fetching and adding. We could check and loop
-
-        self._run_with_handle(handle)
 
 
 class RequestService(task_lib.Task):
@@ -632,66 +449,56 @@ class RequestService(task_lib.Task):
         *,
         alert_driver: driver_lib.AlertDriver,
         resume_service: resume_lib.ResumeService,
-        session: lt.session,
         pedantic=False,
     ):
         super().__init__(title="RequestService", thread_name="request")
         self._alert_driver = alert_driver
         self._resume_service = resume_service
-        self._session = session
         self._pedantic = pedantic
 
         self._lock = threading.RLock()
         # As of 3.8, WeakValueDictionary is unsubscriptable
-        self._torrent_tasks = (
+        self._tasks = (
             WeakValueDictionary()
-        )  # type: WeakValueDictionary[lt.sha1_hash, _TorrentTask]
-
-        self._atp_settings: Mapping[str, Any] = {}
+        )  # type: WeakValueDictionary[lt.torrent_handle, _Task]
 
     def add_request(
         self,
         *,
-        info_hash: lt.sha1_hash,
+        handle: lt.torrent_handle,
         start: int,
         stop: int,
         mode: Mode,
-        get_atp: Callable[[], lt.add_torrent_params],
     ) -> Request:
         request = Request(
-            info_hash=info_hash,
+            handle=handle,
             start=start,
             stop=stop,
             mode=mode,
-            get_atp=get_atp,
         )
 
         with self._lock:
             if self._terminated.is_set():
-                request.set_exception(
-                    CanceledError("RequestService terminated")
-                )
+                request.set_exception(_mk_cancelederror())
                 return request
 
-            task = self._torrent_tasks.get(info_hash)
+            task = self._tasks.get(handle)
             while True:
                 if task is not None and task.add(request):
                     break
-                task = _TorrentTask(
-                    info_hash=info_hash,
+                task = _Task(
+                    handle=handle,
                     alert_driver=self._alert_driver,
                     resume_service=self._resume_service,
-                    session=self._session,
-                    prev_task=task,
                 )
-                self._torrent_tasks[info_hash] = task
+                self._tasks[handle] = task
                 self._add_child(task, terminate_me_on_error=self._pedantic)
 
         return request
 
     def discard_request(self, request: Request) -> None:
         with self._lock:
-            task = self._torrent_tasks.get(request.info_hash)
+            task = self._tasks.get(request.handle)
             if task is None:
                 return
             task.discard(request)

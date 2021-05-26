@@ -15,60 +15,13 @@ import concurrent.futures
 import os
 import os.path
 import tempfile
-from typing import Any
 
 import libtorrent as lt
 
-from tvaf import request as request_lib
+from tvaf import ltpy
 
 from . import lib
 from . import request_test_utils
-
-
-class DummyException(Exception):
-
-    pass
-
-
-def _raise_dummy() -> Any:
-    raise DummyException()
-
-
-class TestCleanup(request_test_utils.RequestServiceTestCase):
-
-    maxDiff = None
-
-    def setUp(self) -> None:
-        super().setUp()
-        atp = self.torrent.atp()
-        self.handle = self.session.add_torrent(atp)
-        self.handle.prioritize_pieces([0] * len(self.torrent.pieces))
-        self.cleanup = request_lib._Cleanup(
-            handle=self.handle,
-            session=self.session,
-            alert_driver=self.alert_driver,
-        )
-
-    def test_remove(self) -> None:
-        self.cleanup.cleanup()
-        self.assertEqual(self.session.get_torrents(), [])
-
-    def test_have_priorities(self) -> None:
-        self.handle.prioritize_pieces([4] * len(self.torrent.pieces))
-        self.cleanup.cleanup()
-        self.assertEqual(self.session.get_torrents(), [self.handle])
-
-    def test_have_data(self) -> None:
-        request_test_utils.wait_done_checking_or_error(self.handle)
-        # NB: bug in libtorrent where add_piece accepts str but not bytes
-        self.handle.add_piece(0, self.torrent.pieces[0].decode(), 0)
-        # Hopefully, add_piece() followed immediately by cleanup() is an
-        # effective test for "the torrent has any data", even if pieces haven't
-        # been checked yet
-        self.cleanup.cleanup()
-        self.assertEqual(self.session.get_torrents(), [self.handle])
-
-    # TODO: can we test the download-after-graceful-pause case?
 
 
 class TestAddRemove(request_test_utils.RequestServiceTestCase):
@@ -80,24 +33,19 @@ class TestAddRemove(request_test_utils.RequestServiceTestCase):
             [self.torrent.sha1_hash],
         )
         self.service.discard_request(req)
-        with self.assertRaises(request_lib.CanceledError):
-            req.read(timeout=5)
-
-    def test_fetch_error(self) -> None:
-        req = self.add_req(get_atp=_raise_dummy)
-        with self.assertRaises(request_lib.FetchError):
+        with self.assertRaises(ltpy.CanceledError):
             req.read(timeout=5)
 
     def test_shutdown(self) -> None:
         req = self.add_req()
         self.service.terminate()
-        with self.assertRaises(request_lib.CanceledError):
+        with self.assertRaises(ltpy.CanceledError):
             req.read(timeout=5)
 
     def test_already_shutdown(self) -> None:
         self.service.terminate()
         req = self.add_req()
-        with self.assertRaises(request_lib.CanceledError):
+        with self.assertRaises(ltpy.CanceledError):
             req.read(timeout=5)
 
 
@@ -195,7 +143,10 @@ class TestRead(request_test_utils.RequestServiceTestCase):
         with open(path, mode="w"):
             pass
 
-        req = self.add_req(save_path=path)
+        atp = self.torrent.atp()
+        atp.save_path = path
+        handle = self.session.add_torrent(atp)
+        req = self.add_req(handle=handle)
         self.feed_pieces()
 
         with self.assertRaises(NotADirectoryError):
@@ -260,5 +211,5 @@ class TestRemoveTorrent(request_test_utils.RequestServiceTestCase):
     def test_with_active_requests(self) -> None:
         req = self.add_req()
         self.session.remove_torrent(self.wait_for_torrent())
-        with self.assertRaises(request_lib.TorrentRemovedError):
+        with self.assertRaises(ltpy.InvalidTorrentHandleError):
             req.read(timeout=5)

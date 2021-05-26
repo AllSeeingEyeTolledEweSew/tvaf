@@ -111,7 +111,6 @@ def get_resume_service() -> resume_lib.ResumeService:
 @lifecycle.singleton()
 def get_request_service() -> request_lib.RequestService:
     return request_lib.RequestService(
-        session=get_session(),
         resume_service=get_resume_service(),
         alert_driver=get_alert_driver(),
     )

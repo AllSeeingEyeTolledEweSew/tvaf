@@ -12,8 +12,6 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 import tempfile
-from typing import Callable
-from typing import Optional
 import unittest
 
 import libtorrent as lt
@@ -81,7 +79,6 @@ class RequestServiceTestCase(unittest.TestCase):
             path=self.tempdir.name,
         )
         self.service = request_lib.RequestService(
-            session=self.session,
             alert_driver=self.alert_driver,
             resume_service=self.resume_service,
         )
@@ -109,33 +106,25 @@ class RequestServiceTestCase(unittest.TestCase):
 
     def add_req(
         self,
+        handle: lt.torrent_handle = None,
         mode=request_lib.Mode.READ,
         start=None,
         stop=None,
-        get_atp: Optional[Callable[[], lt.add_torrent_params]] = None,
-        save_path=None,
     ) -> request_lib.Request:
         if start is None:
             start = 0
         if stop is None:
             stop = self.torrent.length
-        if get_atp is None:
-            get_atp = self.torrent.atp
-        if save_path is None:
-            save_path = self.tempdir.name
-
-        def get_atp_with_path() -> lt.add_torrent_params:
-            assert get_atp is not None
-            atp = get_atp()
-            atp.save_path = save_path
-            return atp
+        if handle is None:
+            atp = self.torrent.atp()
+            atp.save_path = self.tempdir.name
+            handle = self.session.add_torrent(atp)
 
         return self.service.add_request(
             mode=mode,
-            info_hash=self.torrent.sha1_hash,
+            handle=handle,
             start=start,
             stop=stop,
-            get_atp=get_atp_with_path,
         )
 
     def wait_for_torrent(self) -> lt.torrent_handle:
