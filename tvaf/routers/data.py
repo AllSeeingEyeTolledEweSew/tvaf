@@ -12,8 +12,13 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 import logging
+from typing import AsyncIterator
+from typing import Awaitable
+from typing import Callable
 from typing import Iterator
 from typing import Optional
+from typing import Tuple
+from typing import Union
 
 import fastapi
 import libtorrent as lt
@@ -21,44 +26,109 @@ from pydantic import NonNegativeInt
 import starlette.responses
 import starlette.types
 
-from tvaf import multihash
-from tvaf import plugins
-from tvaf import request as request_lib
-from tvaf import services
-from tvaf import torrent_info
+from .. import concurrency
+from .. import ltpy
+from .. import multihash
+from .. import services
+from .. import torrent_info
+from .. import util
+from ..services import util as services_util
 
 ROUTER = fastapi.APIRouter(prefix="/v1", tags=["data access"])
 
 _LOG = logging.getLogger(__name__)
 
 
-class AlwaysRunStreamingResponse(starlette.responses.StreamingResponse):
-    async def __call__(
-        self,
-        scope: starlette.types.Scope,
-        receive: starlette.types.Receive,
-        send: starlette.types.Send,
-    ) -> None:
+def _get_bounds_from_ti(
+    ti: lt.torrent_info, file_index: int
+) -> Tuple[int, int]:
+    fs = ti.files()
+    if file_index >= fs.num_files():
+        raise IndexError(file_index)
+    offset = fs.file_offset(file_index)
+    size = fs.file_size(file_index)
+    return (offset, offset + size)
+
+
+class _Helper:
+    def __init__(self, btmh: multihash.Multihash, file_index: int) -> None:
+        self.btmh = btmh
+        self.file_index = file_index
+
+    @concurrency.acached_property
+    async def existing_handle(self) -> lt.torrent_handle:
+        assert self.btmh.func == multihash.Func.sha1
+        sha1_hash = lt.sha1_hash(self.btmh.digest)
+        session = await services.get_session()
+        return await concurrency.to_thread(session.find_torrent, sha1_hash)
+
+    @concurrency.acached_property
+    async def existing_torrent_info(self) -> Optional[lt.torrent_info]:
+        handle = await self.existing_handle
+        if not handle.is_valid():
+            return None
+        return await concurrency.to_thread(handle.torrent_file)
+
+    @concurrency.acached_property
+    async def torrent_info(self) -> lt.torrent_info:
+        return await services_util.get_torrent_info(await self.valid_handle)
+
+    @concurrency.acached_property
+    async def bounds(self) -> Tuple[int, int]:
         try:
-            await super().__call__(scope, receive, send)
-        except Exception:
-            # background gets run in the base class if there are no errors
-            await self.background()
+            # If the torrent exists and has metadata, get bounds from that
+            existing_ti = await self.existing_torrent_info
+            if existing_ti:
+                return _get_bounds_from_ti(existing_ti, self.file_index)
+
+            # Get bounds from cache
+            try:
+                return await torrent_info.get_file_bounds_from_cache(
+                    self.btmh, self.file_index
+                )
+            except KeyError:
+                pass
+
+            # Add the torrent and get bounds from its metadata
+            return _get_bounds_from_ti(
+                await self.torrent_info, self.file_index
+            )
+        except IndexError:
+            raise fastapi.HTTPException(
+                status_code=fastapi.status.HTTP_404_NOT_FOUND,
+                detail="file does not exist in torrent",
+            )
+
+    @concurrency.acached_property
+    async def configure_atp(
+        self,
+    ) -> Callable[[lt.add_torrent_params], Awaitable]:
+        try:
+            return await torrent_info.get_configure_atp(self.btmh)
+        except KeyError:
+            raise fastapi.HTTPException(
+                status_code=fastapi.status.HTTP_404_NOT_FOUND,
+                detail="unknown torrent",
+            )
+
+    @concurrency.acached_property
+    async def valid_handle(self) -> lt.torrent_handle:
+        existing = await self.existing_handle
+        if existing.is_valid():
+            return existing
+        configure_atp = await self.configure_atp
+        atp = await services.get_default_atp()
+        await configure_atp(atp)
+        await services.configure_atp(atp)
+        atp.flags &= ~lt.torrent_flags.duplicate_is_error
+        session = await services.get_session()
+        # TODO: check against the requested network
+        with ltpy.translate_exceptions():
+            return await concurrency.to_thread(session.add_torrent, atp)
 
 
-def reader(request: request_lib.Request) -> Iterator[bytes]:
-    while True:
-        mview = request.read(timeout=60)
-        if mview is None:
-            raise TimeoutError()
-        data = bytes(mview)
-        if not data:
-            return
-        yield data
-
-
-@ROUTER.api_route("/btmh/{btmh}/i/{file_index}", methods=("GET", "HEAD"))
-def read_file(
+@ROUTER.api_route("/btmh/{btmh}/i/{file_index}", methods=["GET", "HEAD"])
+async def read_file(
     btmh: multihash.Multihash,
     file_index: NonNegativeInt,
     request: fastapi.Request,
@@ -69,43 +139,38 @@ def read_file(
             detail="only sha1 info-hashes supported at this time",
         )
 
-    try:
-        start, stop = torrent_info.get_file_bounds(btmh, file_index)
-        configure_atp = torrent_info.get_configure_atp(btmh)
-    except plugins.Pass:
-        raise fastapi.HTTPException(
-            status_code=fastapi.status.HTTP_404_NOT_FOUND,
-            detail=f"Unknown torrent: {btmh}",
-        )
+    helper = _Helper(btmh, file_index)
+    # May add the torrent, to figure out bounds from its torrent_info
+    start, stop = await helper.bounds
+    # Do this even for HEAD requests, to ensure we can access the torrent
+    await helper.configure_atp
 
     headers = {
         "Content-Type": "application/octet-stream",
         "Content-Length": str(stop - start),
     }
 
-    iterator: Iterator[bytes] = iter(())
-    cleanup: Optional[starlette.background.BackgroundTask] = None
+    iterator: Union[AsyncIterator[bytes], Iterator[bytes]] = iter(())
     if request.method == "GET":
-        atp = services.get_default_atp()
-        configure_atp(atp)
-        services.configure_atp(atp)
-        atp.flags &= ~lt.torrent_flags.duplicate_is_error
-        # DOES block
-        handle = services.get_session().add_torrent(atp)
-
-        request_service = services.get_request_service()
-
-        request = request_service.add_request(
-            handle=handle,
-            start=start,
-            stop=stop,
-            mode=request_lib.Mode.READ,
+        # Will add the torrent if it hasn't been added yet
+        piece_length = (await helper.torrent_info).piece_length()
+        start_piece, stop_piece = util.range_to_pieces(
+            piece_length, start, stop
         )
-        iterator = reader(request)
-        cleanup = starlette.background.BackgroundTask(
-            request_service.discard_request, request
+        request_service = await services.get_request_service()
+        pieces = request_service.read_pieces(
+            await helper.valid_handle, range(start_piece, stop_piece)
         )
 
-    return AlwaysRunStreamingResponse(
-        iterator, headers=headers, background=cleanup
-    )
+        async def clamped_pieces() -> AsyncIterator[bytes]:
+            offset = start_piece * piece_length
+            async for piece in pieces:
+                assert offset < stop
+                lo = max(0, start - offset)
+                hi = min(len(piece), stop - offset)
+                yield piece[lo:hi]
+                offset += len(piece)
+
+        iterator = clamped_pieces()
+
+    return starlette.responses.StreamingResponse(iterator, headers=headers)

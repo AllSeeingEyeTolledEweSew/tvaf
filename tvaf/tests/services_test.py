@@ -15,11 +15,12 @@ import contextlib
 import os
 import pathlib
 import tempfile
-from typing import Iterator
-import unittest
+from typing import AsyncIterator
 
+from later.unittest.backport import async_case
 import libtorrent as lt
 
+from tvaf import concurrency
 from tvaf import config as config_lib
 from tvaf import resume as resume_lib
 from tvaf import services
@@ -28,101 +29,107 @@ from . import lib
 from . import tdummy
 
 
-class TemporaryDirectoryTestCase(unittest.TestCase):
-    def setUp(self) -> None:
-        self.cwd = pathlib.Path.cwd()
-        self.tempdir = tempfile.TemporaryDirectory()
-        os.chdir(self.tempdir.name)
+class TemporaryDirectoryTestCase(async_case.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.cwd = await concurrency.to_thread(pathlib.Path.cwd)
+        self.tempdir = await concurrency.to_thread(tempfile.TemporaryDirectory)
+        await concurrency.to_thread(os.chdir, self.tempdir.name)
         self.config = lib.create_isolated_config()
-        self.config.write_to_disk(services.CONFIG_PATH)
+        await self.config.write_to_disk(services.CONFIG_PATH)
 
-    def tearDown(self) -> None:
-        os.chdir(self.cwd)
-        self.tempdir.cleanup()
+    async def asyncTearDown(self) -> None:
+        await concurrency.to_thread(os.chdir, self.cwd)
+        await concurrency.to_thread(self.tempdir.cleanup)
 
 
 class LifespanTest(TemporaryDirectoryTestCase):
-    @contextlib.contextmanager
-    def start_stop_session(self) -> Iterator[None]:
-        services.startup()
+    @contextlib.asynccontextmanager
+    async def start_stop_session(self) -> AsyncIterator[None]:
+        await services.startup()
         yield
-        services.shutdown()
+        await services.shutdown()
 
-    def test_with_config(self) -> None:
-        self.assertTrue(services.CONFIG_PATH.is_file())
-        with self.start_stop_session():
+    async def test_with_config(self) -> None:
+        self.assertTrue(
+            await concurrency.to_thread(services.CONFIG_PATH.is_file)
+        )
+        async with self.start_stop_session():
             pass
 
-    def test_empty_directory(self) -> None:
-        # This technically breaks isolation, but we do need to test it
-        services.CONFIG_PATH.unlink()
-        self.assertEqual(list(pathlib.Path().iterdir()), [])
-        with self.start_stop_session():
+    async def test_empty_directory(self) -> None:
+        # this technically breaks isolation (non-isolated config listens on
+        # default ports and will bootstrap dht, etc), but it must be tested!
+        await concurrency.to_thread(services.CONFIG_PATH.unlink)
+        contents = await concurrency.alist(
+            concurrency.iter_in_thread(pathlib.Path().iterdir())
+        )
+        self.assertEqual(contents, [])
+        async with self.start_stop_session():
             pass
 
-    def test_set_config(self) -> None:
-        with self.start_stop_session():
+    async def test_set_config(self) -> None:
+        async with self.start_stop_session():
             self.config["__test_key__"] = "value"
 
-            services.set_config(self.config)
+            await services.set_config(self.config)
 
             # Test loaded into available config
-            self.assertEqual(services.get_config()["__test_key__"], "value")
+            config = await services.get_config()
+            self.assertEqual(config["__test_key__"], "value")
             # Test written to disk
-            self.assertEqual(
-                config_lib.Config.from_disk(services.CONFIG_PATH), self.config
-            )
+            config = await config_lib.Config.from_disk(services.CONFIG_PATH)
+            self.assertEqual(config, self.config)
 
-    def test_set_invalid_config(self) -> None:
-        with self.start_stop_session():
+    async def test_set_invalid_config(self) -> None:
+        async with self.start_stop_session():
             self.config["torrent_default_storage_mode"] = "invalid"
             with self.assertRaises(config_lib.InvalidConfigError):
-                services.set_config(self.config)
+                await services.set_config(self.config)
+            config = await services.get_config()
             self.assertNotEqual(
-                services.get_config().get_str("torrent_default_storage_mode"),
-                "invalid",
+                config.get_str("torrent_default_storage_mode"), "invalid"
             )
 
-    def test_save_and_load_resume_data(self) -> None:
-        with self.start_stop_session():
-            services.get_session().add_torrent(tdummy.DEFAULT.atp())
+    async def test_save_and_load_resume_data(self) -> None:
+        async with self.start_stop_session():
+            session = await services.get_session()
+            atp = tdummy.DEFAULT.atp()
+            atp.save_path = self.tempdir.name
+            session.async_add_torrent(atp)
 
-        self.assertEqual(
-            len(
-                list(
-                    resume_lib.iter_resume_data_from_disk(
-                        services.RESUME_DATA_PATH
-                    )
-                )
-            ),
-            1,
+        resume_data = await concurrency.alist(
+            resume_lib.iter_resume_data_from_disk(services.RESUME_DATA_PATH)
         )
+        self.assertEqual(len(resume_data), 1)
 
-        with self.start_stop_session():
-            self.assertEqual(len(services.get_session().get_torrents()), 1)
+        async with self.start_stop_session():
+            session = await services.get_session()
+            torrents = await concurrency.to_thread(session.get_torrents)
+            self.assertEqual(len(torrents), 1)
 
-    def test_process_lock(self) -> None:
-        with self.start_stop_session():
+    async def test_process_lock(self) -> None:
+        async with self.start_stop_session():
             with self.assertRaises(AssertionError):
-                services.startup()
+                await services.startup()
 
 
 class TestDefaultATP(TemporaryDirectoryTestCase):
-    def setUp(self) -> None:
-        super().setUp()
-        services.startup()
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        await services.startup()
 
-    def tearDown(self) -> None:
-        services.shutdown()
-        super().tearDown()
+    async def asyncTearDown(self) -> None:
+        await services.shutdown()
+        await super().asyncTearDown()
 
-    def test_config_defaults(self) -> None:
-        save_path = str(pathlib.Path("download").resolve())
-        self.assertEqual(
-            services.get_config()["torrent_default_save_path"], save_path
+    async def test_config_defaults(self) -> None:
+        save_path = str(
+            await concurrency.to_thread(pathlib.Path("download").resolve)
         )
+        config = await services.get_config()
+        self.assertEqual(config["torrent_default_save_path"], save_path)
 
-        atp = services.get_default_atp()
+        atp = await services.get_default_atp()
 
         self.assertEqual(atp.save_path, save_path)
         self.assertEqual(atp.flags, lt.torrent_flags.default_flags)
@@ -130,16 +137,16 @@ class TestDefaultATP(TemporaryDirectoryTestCase):
             atp.storage_mode, lt.add_torrent_params().storage_mode
         )
 
-    def test_set_non_defaults(self) -> None:
+    async def test_set_non_defaults(self) -> None:
         # Set all non-default configs
         config = config_lib.Config(
             torrent_default_save_path=self.tempdir.name,
             torrent_default_flags_apply_ip_filter=False,
             torrent_default_storage_mode="allocate",
         )
-        services.set_config(config)
+        await services.set_config(config)
 
-        atp = services.get_default_atp()
+        atp = await services.get_default_atp()
 
         self.assertEqual(atp.save_path, self.tempdir.name)
         self.assertEqual(
@@ -150,20 +157,22 @@ class TestDefaultATP(TemporaryDirectoryTestCase):
             atp.storage_mode, lt.storage_mode_t.storage_mode_allocate
         )
 
-    def test_save_path_loop(self) -> None:
+    async def test_save_path_loop(self) -> None:
         bad_link = pathlib.Path("bad_link")
-        bad_link.symlink_to(bad_link, target_is_directory=True)
+        await concurrency.to_thread(
+            bad_link.symlink_to, bad_link, target_is_directory=True
+        )
 
         config = config_lib.Config(torrent_default_save_path=str(bad_link))
         with self.assertRaises(config_lib.InvalidConfigError):
-            services.set_config(config)
+            await services.set_config(config)
 
-    def test_flags_apply_ip_filter_null(self) -> None:
+    async def test_flags_apply_ip_filter_null(self) -> None:
         config = config_lib.Config(torrent_default_flags_apply_ip_filter=None)
         with self.assertRaises(config_lib.InvalidConfigError):
-            services.set_config(config)
+            await services.set_config(config)
 
-    def test_storage_mode_invalid(self) -> None:
+    async def test_storage_mode_invalid(self) -> None:
         config = config_lib.Config(torrent_default_storage_mode="invalid")
         with self.assertRaises(config_lib.InvalidConfigError):
-            services.set_config(config)
+            await services.set_config(config)

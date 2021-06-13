@@ -34,10 +34,6 @@ def return_b() -> str:
     return "b"
 
 
-def raise_pass() -> str:
-    raise plugins.Pass()
-
-
 class GetEntryPointsTest(unittest.TestCase):
     def setUp(self) -> None:
         self.fake_eps = lib.EntryPointFaker()
@@ -81,33 +77,3 @@ class LoadEntryPointsTest(unittest.TestCase):
         plugin_list = plugins.load_entry_points("test")
         values = [plugin() for plugin in plugin_list]
         self.assertEqual(values, ["a", "b"])
-
-
-class CallFirstTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.fake_eps = lib.EntryPointFaker()
-        self.fake_eps.enable()
-
-    def tearDown(self) -> None:
-        self.fake_eps.disable()
-        lifecycle.clear()
-
-    def test_last_returns(self) -> None:
-        self.fake_eps.add("a", raise_pass, "test")
-        self.fake_eps.add("b", return_a, "test")
-        self.assertEqual(plugins.call_first("test"), "a")
-
-    def test_first_returns(self) -> None:
-        self.fake_eps.add("a", return_a, "test")
-        self.fake_eps.add("b", raise_pass, "test")
-        self.assertEqual(plugins.call_first("test"), "a")
-
-    def test_all_raise_pass(self) -> None:
-        self.fake_eps.add("a", raise_pass, "test")
-        self.fake_eps.add("b", raise_pass, "test")
-        with self.assertRaises(plugins.Pass):
-            plugins.call_first("test")
-
-    def test_empty(self) -> None:
-        with self.assertRaises(plugins.Pass):
-            plugins.call_first("test")

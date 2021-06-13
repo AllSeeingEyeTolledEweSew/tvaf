@@ -39,7 +39,9 @@ import unittest.mock
 import uuid
 
 import importlib_resources
+import libtorrent as lt
 
+from tvaf import concurrency
 from tvaf import config as config_lib
 from tvaf import session as session_lib
 
@@ -57,7 +59,7 @@ def create_isolated_config() -> config_lib.Config:
         session_enable_upnp=False,
         session_listen_interfaces="127.0.0.1:0",
         session_alert_mask=0,
-        http_port=0,
+        session_dht_bootstrap_nodes="",
     )
 
 
@@ -76,6 +78,18 @@ def loop_until_timeout(
     while time.monotonic() < deadline:
         yield
     raise AssertionError(f"{msg} timed out")
+
+
+async def wait_done_checking_or_error(handle: lt.torrent_handle) -> None:
+    while True:
+        status = await concurrency.to_thread(handle.status)
+        if status.state not in (
+            lt.torrent_status.states.checking_resume_data,
+            lt.torrent_status.states.checking_files,
+        ):
+            break
+        if status.errc.value() != 0:
+            break
 
 
 class TestCase(unittest.TestCase):

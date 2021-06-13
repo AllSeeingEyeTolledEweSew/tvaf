@@ -11,6 +11,7 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+import asyncio
 import pathlib
 import tempfile
 from typing import Any
@@ -19,21 +20,23 @@ from typing import Dict
 from typing import Hashable
 from typing import List
 from typing import Set
-import unittest
+from typing import TypeVar
 
+from later.unittest.backport import async_case
 import libtorrent as lt
 
+from tvaf import concurrency
 from tvaf import driver as driver_lib
 from tvaf import ltpy
 from tvaf import resume as resume_lib
 
 from . import lib
-from . import request_test_utils
 from . import tdummy
 
 
-def atp_dict_fixup(atp_dict: Dict[bytes, Any]) -> Dict[bytes, Any]:
-    return cast(Dict[bytes, Any], lt.bdecode(lt.bencode(atp_dict)))
+def normalize(bdecoded: Dict[bytes, Any]) -> Dict[bytes, Any]:
+    # This normalizes any preformatted components
+    return cast(Dict[bytes, Any], lt.bdecode(lt.bencode(bdecoded)))
 
 
 def hashable(obj: Any) -> Hashable:
@@ -45,14 +48,17 @@ def hashable(obj: Any) -> Hashable:
 
 
 def atp_hashable(atp: lt.add_torrent_params) -> Hashable:
-    return hashable(atp_dict_fixup(lt.write_resume_data(atp)))
+    return hashable(normalize(lt.write_resume_data(atp)))
 
 
 def atp_comparable(atp: lt.add_torrent_params) -> Dict[bytes, Any]:
-    return atp_dict_fixup(lt.write_resume_data(atp))
+    return normalize(lt.write_resume_data(atp))
 
 
-class IterResumeDataTest(unittest.TestCase):
+_T = TypeVar("_T")
+
+
+class IterResumeDataTest(async_case.IsolatedAsyncioTestCase):
 
     maxDiff = None
 
@@ -107,13 +113,15 @@ class IterResumeDataTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.tempdir.cleanup()
 
-    def test_normal(self) -> None:
-        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
+    async def test_normal(self) -> None:
+        atps = await concurrency.alist(
+            resume_lib.iter_resume_data_from_disk(self.path)
+        )
         self.assert_atp_sets_equal(
             set(atps), {self.TORRENT1.atp(), self.TORRENT2.atp()}
         )
 
-    def test_ignore_bad_data(self) -> None:
+    async def test_ignore_bad_data(self) -> None:
         # valid resume data, wrong filename
         path = self.path.joinpath("00" * 20).with_suffix(".tmp")
         data = lt.bencode(lt.write_resume_data(self.TORRENT3.atp()))
@@ -136,14 +144,16 @@ class IterResumeDataTest(unittest.TestCase):
         path = self.path.joinpath("02" * 20).with_suffix(".resume")
         path.symlink_to("does_not_exist.resume")
 
-        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
+        atps = await concurrency.alist(
+            resume_lib.iter_resume_data_from_disk(self.path)
+        )
         self.assert_atp_sets_equal(
             set(atps), {self.TORRENT1.atp(), self.TORRENT2.atp()}
         )
 
 
-class TerminateTest(unittest.TestCase):
-    def setUp(self) -> None:
+class TerminateTest(async_case.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
         self.session_service = lib.create_isolated_session_service()
         self.session = self.session_service.session
         self.torrent = tdummy.DEFAULT
@@ -155,25 +165,24 @@ class TerminateTest(unittest.TestCase):
         self.resume = resume_lib.ResumeService(
             session=self.session,
             alert_driver=self.alert_driver,
-            pedantic=True,
             path=self.path,
         )
         self.resume.start()
         self.alert_driver.start()
 
-    def tearDown(self) -> None:
-        self.resume.terminate()
-        self.resume.join()
-        self.alert_driver.terminate()
-        self.alert_driver.join()
-        self.tempdir.cleanup()
+    async def asyncTearDown(self) -> None:
+        self.resume.close()
+        await asyncio.wait_for(self.resume.wait_closed(), 5)
+        self.alert_driver.close()
+        await asyncio.wait_for(self.alert_driver.wait_closed(), 5)
+        await concurrency.to_thread(self.tempdir.cleanup)
 
-    def test_mid_download(self) -> None:
+    async def test_mid_download(self) -> None:
         atp = self.torrent.atp()
         atp.flags &= ~lt.torrent_flags.paused
         atp.save_path = self.tempdir.name
         handle = self.session.add_torrent(atp)
-        request_test_utils.wait_done_checking_or_error(handle)
+        await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 5)
         # NB: bug in libtorrent where add_piece accepts str but not bytes
         handle.add_piece(0, self.torrent.pieces[0].decode(), 0)
 
@@ -183,8 +192,8 @@ class TerminateTest(unittest.TestCase):
                 break
 
         self.session.pause()
-        self.resume.terminate()
-        self.resume.join()
+        self.resume.close()
+        await asyncio.wait_for(self.resume.wait_closed(), 5)
 
         def atp_have_piece(atp: lt.add_torrent_params, index: int) -> bool:
             if atp.have_pieces[index]:
@@ -196,17 +205,19 @@ class TerminateTest(unittest.TestCase):
                 return False
             return all(bitmask[i] for i in range(num_blocks))
 
-        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
+        atps = await concurrency.alist(
+            resume_lib.iter_resume_data_from_disk(self.path)
+        )
         self.assertEqual(len(atps), 1)
         atp = atps[0]
         self.assertTrue(atp_have_piece(atp, 0))
 
-    def test_finished(self) -> None:
+    async def test_finished(self) -> None:
         atp = self.torrent.atp()
         atp.flags &= ~lt.torrent_flags.paused
         atp.save_path = self.tempdir.name
         handle = self.session.add_torrent(atp)
-        request_test_utils.wait_done_checking_or_error(handle)
+        await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 5)
         for i, piece in enumerate(self.torrent.pieces):
             # NB: bug in libtorrent where add_piece accepts str but not bytes
             handle.add_piece(i, piece.decode(), 0)
@@ -217,44 +228,48 @@ class TerminateTest(unittest.TestCase):
                 break
 
         self.session.pause()
-        self.resume.terminate()
-        self.resume.join()
+        self.resume.close()
+        await asyncio.wait_for(self.resume.wait_closed(), 5)
 
-        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
+        atps = await concurrency.alist(
+            resume_lib.iter_resume_data_from_disk(self.path)
+        )
         self.assertEqual(len(atps), 1)
         atp = atps[0]
         self.assertNotEqual(len(atp.have_pieces), 0)
         self.assertTrue(all(atp.have_pieces))
 
-    def test_remove_before_save(self) -> None:
+    async def test_remove_before_save(self) -> None:
         for _ in lib.loop_until_timeout(5, msg="remove-before-save"):
             atp = self.torrent.atp()
             atp.flags &= ~lt.torrent_flags.paused
             atp.save_path = self.tempdir.name
             handle = self.session.add_torrent(atp)
-            request_test_utils.wait_done_checking_or_error(handle)
+            await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 5)
 
             try:
                 with ltpy.translate_exceptions():
                     self.session.remove_torrent(handle)
-                    self.resume.save(handle)
+                    handle.save_resume_data()
                 break
             except ltpy.InvalidTorrentHandleError:
                 pass
 
         self.session.pause()
-        self.resume.terminate()
-        self.resume.join()
+        self.resume.close()
+        await asyncio.wait_for(self.resume.wait_closed(), 5)
 
-        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
+        atps = await concurrency.alist(
+            resume_lib.iter_resume_data_from_disk(self.path)
+        )
         self.assertEqual(atps, [])
 
-    def test_finish_remove_terminate(self) -> None:
+    async def test_finish_remove_terminate(self) -> None:
         atp = self.torrent.atp()
         atp.flags &= ~lt.torrent_flags.paused
         atp.save_path = self.tempdir.name
         handle = self.session.add_torrent(atp)
-        request_test_utils.wait_done_checking_or_error(handle)
+        await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 5)
         for i, piece in enumerate(self.torrent.pieces):
             # NB: bug in libtorrent where add_piece accepts str but not bytes
             handle.add_piece(i, piece.decode(), 0)
@@ -264,15 +279,15 @@ class TerminateTest(unittest.TestCase):
             if status.state in (status.states.finished, status.states.seeding):
                 break
 
-        # Remove, pause and terminate before we process any alerts.
-        # ResumeService should try to save_resume_data() on an invalid handle.
-        # This is timing-dependent but I don't have a way to force it.
+        # Synchronously remove torrent and close
         self.session.remove_torrent(handle)
         self.session.pause()
-        self.resume.terminate()
-        self.resume.join()
+        self.resume.close()
+        await asyncio.wait_for(self.resume.wait_closed(), 5)
 
-        atps = list(resume_lib.iter_resume_data_from_disk(self.path))
+        atps = await concurrency.alist(
+            resume_lib.iter_resume_data_from_disk(self.path)
+        )
         self.assertEqual(atps, [])
 
 

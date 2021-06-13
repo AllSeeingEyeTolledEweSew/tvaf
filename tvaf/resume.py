@@ -10,65 +10,41 @@
 # LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
+from __future__ import annotations
 
-import concurrent.futures
+import asyncio
 import contextlib
+import inspect
 import logging
 import math
 import os
 import pathlib
 import re
-import threading
+from typing import Any
+from typing import AsyncIterator
+from typing import Awaitable
 from typing import Callable
-from typing import cast
+from typing import Coroutine
+from typing import Dict
 from typing import Iterator
+from typing import MutableMapping
 from typing import Optional
 from typing import Union
 import warnings
+import weakref
 
 import libtorrent as lt
 
-from tvaf import driver as driver_lib
-from tvaf import ltpy
-from tvaf import task as task_lib
+from . import concurrency
+from . import driver as driver_lib
+from . import ltpy
 
 _LOG = logging.getLogger(__name__)
 
-SAVE_ALL_INTERVAL = math.tan(1.5657)  # ~196
 
-
-class _Underflow(Exception):
-
-    pass
-
-
-class _Counter:
-    def __init__(self):
-        self._condition = threading.Condition()
-        self._value: int = 0
-
-    def inc(self, delta: int) -> int:
-        with self._condition:
-            self._value += delta
-            if self._value == 0:
-                self._condition.notify_all()
-            if self._value < 0:
-                self._value = 0
-                raise _Underflow()
-            return self._value
-
-    def wait_zero(self, timeout: float = None) -> bool:
-        with self._condition:
-            return bool(
-                self._condition.wait_for(
-                    lambda: self._value == 0, timeout=timeout
-                )
-            )
-
-
-def _try_read(path: pathlib.Path) -> Optional[bytes]:
+async def _try_read(path: pathlib.Path) -> Optional[bytes]:
     try:
-        return path.read_bytes()
+        return await concurrency.to_thread(path.read_bytes)
     except FileNotFoundError:
         return None
     except OSError:
@@ -76,21 +52,21 @@ def _try_read(path: pathlib.Path) -> Optional[bytes]:
         return None
 
 
-def _try_load_ti(path: pathlib.Path) -> Optional[lt.torrent_info]:
-    data = _try_read(path)
+async def _try_load_ti(path: pathlib.Path) -> Optional[lt.torrent_info]:
+    data = await _try_read(path)
     if data is None:
         return None
 
     try:
         with ltpy.translate_exceptions():
-            return lt.torrent_info(lt.bdecode(data))
+            return lt.torrent_info(data)
     except ltpy.Error:
         _LOG.exception("while parsing %s", path)
         return None
 
 
-def _try_load_atp(path: pathlib.Path) -> Optional[lt.add_torrent_params]:
-    data = _try_read(path)
+async def _try_load_atp(path: pathlib.Path) -> Optional[lt.add_torrent_params]:
+    data = await _try_read(path)
     if data is None:
         return None
 
@@ -102,24 +78,26 @@ def _try_load_atp(path: pathlib.Path) -> Optional[lt.add_torrent_params]:
         return None
 
 
-def iter_resume_data_from_disk(
+async def iter_resume_data_from_disk(
     dir_path: Union[str, os.PathLike],
-) -> Iterator[lt.add_torrent_params]:
+) -> AsyncIterator[lt.add_torrent_params]:
     dir_path = pathlib.Path(dir_path)
-    if not dir_path.is_dir():
+    if not await concurrency.to_thread(dir_path.is_dir):
         return
-    for path in dir_path.iterdir():
+    async for path in concurrency.iter_in_thread(
+        dir_path.iterdir(), batch_size=100
+    ):
         if path.suffixes != [".resume"]:
             continue
         if not re.match(r"[0-9a-f]{40}", path.stem):
             continue
 
-        atp = _try_load_atp(path)
+        atp = await _try_load_atp(path)
         if not atp:
             continue
 
         if atp.ti is None:
-            atp.ti = _try_load_ti(path.with_suffix(".torrent"))
+            atp.ti = await _try_load_ti(path.with_suffix(".torrent"))
         yield atp
 
 
@@ -132,242 +110,40 @@ def _write_safe_log(path: pathlib.Path) -> Iterator[pathlib.Path]:
         # Atomic on Linux and Windows, apparently
         tmp_path.replace(path)
     finally:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             tmp_path.unlink()
-        except FileNotFoundError:
-            pass
-    _LOG.debug("wrote: %s", path)
+    _LOG.debug("fastresume: wrote %s", path)
 
 
 def _delete(path: pathlib.Path) -> None:
-    try:
+    with contextlib.suppress(FileNotFoundError):
         path.unlink()
-        _LOG.debug("deleted: %s", path)
-    except FileNotFoundError:
-        pass
+        _LOG.debug("fastresume: deleted %s", path)
 
 
-# NB: If remove_torrent() is immediately followed by save_resume_data(), as
-# both calls are asynchronous, it's possible to schedule both before either one
-# runs, which results in torrent_removed_alert followed by
-# save_resume_data_alert. The handle will be invalid and the params data is
-# meaningless. This is actually useful to us: each successful
-# save_resume_data() yields exactly one save_resume_data[_failed]_alert.
+class _ChainedCoroutine:
+    def __init__(self, coro: Coroutine) -> None:
+        self.coro = coro
+        self.next: Optional[Awaitable] = None
 
+    async def run(self) -> None:
+        await self.coro
+        if self.next:
+            asyncio.create_task(self.next)
 
-class _ReceiverTask(task_lib.Task):
-    def __init__(
-        self,
-        *,
-        counter: _Counter,
-        resume_service: "ResumeService",
-        alert_driver: driver_lib.AlertDriver,
-        session: lt.session,
-        pedantic=False
-    ):
-        super().__init__(
-            title="fastresume data receiver", thread_name="fastresume.receiver"
-        )
-        self._counter = counter
-        self._resume_service = resume_service
-        self._session = session
-        # Single thread so we synchronize writes/deletes for the same infohash
-        # TODO: do something with more throughput
-        self._io_executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=1
-        )
-        self._check_executor = concurrent.futures.ThreadPoolExecutor()
-        # We handle metadata_received_alert so we're sure to get it at shutdown
-        self._iterator = alert_driver.iter_alerts(
-            lt.alert_category.status,
-            lt.save_resume_data_alert,
-            lt.save_resume_data_failed_alert,
-            lt.torrent_removed_alert,
-            lt.add_torrent_alert,
-            lt.metadata_received_alert,
-        )
-        self._pedantic = pedantic
-
-    def _terminate(self) -> None:
-        self._iterator.close()
-
-    def _io_submit(self, func: Callable, *args, **kwargs) -> None:
-        future = self._io_executor.submit(func, *args, **kwargs)
-        task_lib.log_future_exceptions(future, "in io task")
-        if self._pedantic:
-            task_lib.terminate_task_on_future_fail(self, future)
-
-    def _write_atp(
-        self,
-        check: concurrent.futures.Future,
-        info_hash: lt.sha1_hash,
-        data: bytes,
-    ) -> None:
-        if not check.result():
-            return
-        path = self._resume_service.get_resume_data_path(info_hash)
-        with _write_safe_log(path) as tmp_path:
-            tmp_path.write_bytes(data)
-
-    def _write_ti(
-        self,
-        check: Optional[concurrent.futures.Future],
-        info_hash: lt.sha1_hash,
-        metadata: bytes,
-    ) -> None:
-        if check is not None and not check.result():
-            return
-        path = self._resume_service.get_torrent_path(info_hash)
-        with _write_safe_log(path) as tmp_path:
-            # Metadata is the bencoded infodict itself. We want to write a
-            # proper .torrent file. We can skip the bdecode/bencode step if we
-            # just write bencoded data directly
-            with tmp_path.open(mode="wb") as fp:
-                fp.write(b"d4:info")
-                fp.write(metadata)
-                fp.write(b"e")
-
-    def _dec(self) -> None:
-        try:
-            self._counter.inc(-1)
-        except _Underflow:
-            warnings.warn(
-                "ResumeService received more save_resume_data[_failed]_alerts "
-                "than save_resume_data() calls we made. Either someone called "
-                "save_resume_data() outside of ResumeService, or there's a "
-                "bug in ResumeService"
-            )
-            if self._pedantic:
-                raise
-
-    def _handle_alert(self, alert: lt.alert) -> None:
-        if isinstance(alert, lt.save_resume_data_alert):
-            atp = alert.params
-            handle = alert.handle
-            info_hash = handle.info_hash()
-
-            # NB: when save_resume_data_alert follows torrent_removed_alert,
-            # the handle may still be alive when we receive the alert
-            # (handle.is_valid() is True). If we persist data in this case,
-            # and later load it, the user will see a zombie torrent they
-            # thought they removed.
-
-            # The list of active torrents in the session is synchronized with
-            # add_torrent_alert and torrent_removed_alert, so find_torrent()
-            # will never return a handle after torrent_removed_alert was
-            # posted. See https://github.com/arvidn/libtorrent/issues/5112
-            check = self._check_executor.submit(
-                ltpy.handle_in_session, handle, self._session
-            )
-
-            # Unconditionally submit to our IO queue, so when we terminate we
-            # can wait for it to drain
-            if atp.ti is not None:
-                with ltpy.translate_exceptions():
-                    metadata = atp.ti.metadata()
-                self._io_submit(self._write_ti, check, atp.info_hash, metadata)
-
-            # The add_torrent_params object is managed with alert memory. We
-            # must do write_resume_data() before the next pop_alerts().
-            # It would be more efficient to set ti to None and use
-            # write_resume_data_buf(), but other alert handlers would see the
-            # mutation
-            with ltpy.translate_exceptions():
-                bdict = lt.write_resume_data(atp)
-                bdict.pop(b"info", None)
-                data = lt.bencode(bdict)
-            self._io_submit(self._write_atp, check, atp.info_hash, data)
-            self._dec()
-        elif isinstance(alert, lt.save_resume_data_failed_alert):
-            self._dec()
-        elif isinstance(alert, lt.add_torrent_alert):
-            if alert.error.value():
+    def schedule_after(self, other: Optional[_ChainedCoroutine]) -> None:
+        if other:
+            if inspect.getcoroutinestate(other.coro) != inspect.CORO_CLOSED:
+                other.next = self.run()
                 return
-            # NB: If someone calls async_add_torrent() without
-            # duplicate_is_error and the torrent exists, we will get an
-            # add_torrent_alert with the params they passed, NOT the original
-            # or current params
-            atp = alert.params
-            if atp.ti is None:
-                return
-            with ltpy.translate_exceptions():
-                metadata = atp.ti.metadata()
-            self._io_submit(self._write_ti, None, atp.info_hash, metadata)
-        elif isinstance(alert, lt.torrent_removed_alert):
-            info_hash = alert.info_hash
-            self._io_submit(
-                _delete, self._resume_service.get_resume_data_path(info_hash)
-            )
-            self._io_submit(
-                _delete, self._resume_service.get_torrent_path(info_hash)
-            )
-        elif isinstance(alert, lt.metadata_received_alert):
-            self._resume_service.save(
-                alert.handle, flags=lt.torrent_handle.save_info_dict
-            )
-
-    def _run(self) -> None:
-        with self._iterator:
-            for alert in self._iterator:
-                self._handle_alert(alert)
-
-        self._log_terminate()
-        _LOG.debug("waiting for fastresume data to be written to disk")
-        self._io_executor.shutdown()
+        asyncio.create_task(self.run())
 
 
-class _TriggerTask(task_lib.Task):
-    def __init__(
-        self,
-        *,
-        resume_service: "ResumeService",
-        alert_driver: driver_lib.AlertDriver
-    ):
-        super().__init__(
-            title="fastresume save trigger", thread_name="fastresume.trigger"
-        )
-        self._resume_service = resume_service
-        self._iterator = alert_driver.iter_alerts(
-            lt.alert_category.storage | lt.alert_category.status,
-            lt.file_renamed_alert,
-            lt.torrent_paused_alert,
-            lt.torrent_finished_alert,
-            lt.storage_moved_alert,
-            lt.cache_flushed_alert,
-        )
-
-    def _terminate(self) -> None:
-        self._iterator.close()
-
-    def _run(self) -> None:
-        with self._iterator:
-            for alert in self._iterator:
-                torrent_alert = cast(lt.torrent_alert, alert)
-                self._resume_service.save(
-                    torrent_alert.handle,
-                    flags=lt.torrent_handle.only_if_modified,
-                )
-
-
-class _PeriodicTask(task_lib.Task):
-    def __init__(self, resume_service: "ResumeService"):
-        super().__init__(
-            title="fastresume periodic save", thread_name="fastresume.periodic"
-        )
-        self._resume_service = resume_service
-
-    def _terminate(self) -> None:
-        pass
-
-    def _run(self) -> None:
-        while not self._terminated.wait(SAVE_ALL_INTERVAL):
-            self._resume_service.save_all(
-                flags=lt.torrent_handle.only_if_modified
-            )
-
-
-class ResumeService(task_lib.Task):
+class ResumeService:
     """ResumeService owns resume data management."""
+
+    SAVE_ALL_INTERVAL = math.tan(1.5657)  # ~196
+    TIMEOUT = 10
 
     def __init__(
         self,
@@ -375,28 +151,22 @@ class ResumeService(task_lib.Task):
         session: lt.session,
         alert_driver: driver_lib.AlertDriver,
         path: Union[str, os.PathLike],
-        pedantic=False
     ):
-        super().__init__(title="ResumeService", thread_name="resume")
-        self._counter = _Counter()
         self._session = session
         self._path = pathlib.Path(path)
+        self._alert_driver = alert_driver
+        self._got_alert = asyncio.Event()
 
-        self._receiver_task = _ReceiverTask(
-            resume_service=self,
-            alert_driver=alert_driver,
-            counter=self._counter,
-            session=session,
-            pedantic=pedantic,
-        )
-        self._trigger_task = _TriggerTask(
-            resume_service=self, alert_driver=alert_driver
-        )
-        self._periodic_task = _PeriodicTask(resume_service=self)
+        self._closed = asyncio.get_event_loop().create_future()
+        self._task: Optional[asyncio.Task] = None
 
-        self._add_child(self._receiver_task, start=False)
-        self._add_child(self._trigger_task, start=False)
-        self._add_child(self._periodic_task, start=False)
+        # We want to serialize writes/deletes for a given info hash, so keep a
+        # weak pointer to an awaitable for the last-queued job. New jobs will
+        # await on the old ones before running.
+        self._info_hash_to_write_job: MutableMapping[
+            lt.sha1_hash, _ChainedCoroutine
+        ] = weakref.WeakValueDictionary()
+        self._writes = concurrency.RefCount()
 
     def get_resume_data_path(self, info_hash: lt.sha1_hash) -> pathlib.Path:
         return self._path.joinpath(str(info_hash)).with_suffix(".resume")
@@ -404,58 +174,272 @@ class ResumeService(task_lib.Task):
     def get_torrent_path(self, info_hash: lt.sha1_hash) -> pathlib.Path:
         return self._path.joinpath(str(info_hash)).with_suffix(".torrent")
 
-    def _terminate(self) -> None:
-        pass
+    def _schedule_write(
+        self,
+        info_hash: lt.sha1_hash,
+        func: Callable,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        async def write() -> None:
+            await concurrency.to_thread(func, *args, **kwargs)
+            self._writes.release()
 
-    def _run(self) -> None:
-        self._receiver_task.start()
-        self._trigger_task.start()
-        self._periodic_task.start()
+        self._writes.acquire()
+        chained = _ChainedCoroutine(write())
+        chained.schedule_after(self._info_hash_to_write_job.get(info_hash))
+        self._info_hash_to_write_job[info_hash] = chained
 
-        # Main wait
-        self._terminated.wait()
+    def _maybe_write(
+        self,
+        handle: lt.torrent_handle,
+        *,
+        info_section: bytes = None,
+        resume_data: Dict[bytes, Any] = None,
+        ignore_if_exists=False,
+    ) -> None:
+        info_hash = handle.info_hash()
+        # See comment in _handle_alert.
+        if not ltpy.handle_in_session(handle, self._session):
+            return
 
-        self._log_terminate()
+        if info_section is not None:
+            path = self.get_torrent_path(info_hash)
+            # torrent info never changes, so only write it once
+            if not path.is_file():
+                with _write_safe_log(path) as tmp_path:
+                    # We want to write a proper .torrent file. We can skip the
+                    # bdecode/bencode step if we just write bencoded data
+                    # directly
+                    with tmp_path.open(mode="wb") as fp:
+                        fp.write(b"d4:info")
+                        fp.write(info_section)
+                        fp.write(b"e")
 
-        # _TriggerTask may not have processed all alerts, but we don't care
-        # because we're calling save_all()
-        self._trigger_task.terminate()
-        self._periodic_task.terminate()
-        self._trigger_task.join()
-        self._periodic_task.join()
+        if resume_data is not None:
+            path = self.get_resume_data_path(info_hash)
+            if not ignore_if_exists or not path.is_file():
+                # Don't include the info section in the resume data, as it
+                # accounts for most of the data but never changes
+                resume_data.pop(b"info", None)
+                with ltpy.translate_exceptions():
+                    bencoded = lt.bencode(resume_data)
+                with _write_safe_log(path) as tmp_path:
+                    tmp_path.write_bytes(bencoded)
 
-        self.save_all(
-            flags=lt.torrent_handle.only_if_modified
-            | lt.torrent_handle.flush_disk_cache
-        )
+    def _delete(self, info_hash: lt.sha1_hash) -> None:
+        _delete(self.get_resume_data_path(info_hash))
+        _delete(self.get_torrent_path(info_hash))
 
-        # At this point, no more save()s will be issued
-        _LOG.debug("waiting for final fastresume data")
-        if not self._counter.wait_zero(timeout=15):
-            _LOG.error(
-                "received less fastresume data than we expected. this is a "
-                "bug, and fastresume data may be incomplete"
+    async def _handle_alerts(self) -> None:
+        with self._alert_driver.iter_alerts(
+            lt.alert_category.status | lt.alert_category.storage,
+            lt.save_resume_data_alert,
+            lt.add_torrent_alert,
+            lt.torrent_removed_alert,
+            lt.metadata_received_alert,
+            lt.file_renamed_alert,
+            lt.storage_moved_alert,
+            lt.cache_flushed_alert,
+            lt.torrent_paused_alert,
+            lt.torrent_finished_alert,
+        ) as iterator:
+            async for alert in iterator:
+                with contextlib.suppress(ltpy.InvalidTorrentHandleError):
+                    self._handle_alert(alert)
+
+    def _handle_alert(self, alert: lt.alert) -> None:
+        self._got_alert.set()
+        # NB: torrent_removed_alert may be followed by other alerts for the
+        # same handle, and the handle may still be valid. We must avoid writing
+        # data for deleted torrents, but we don't persist per-torrent state to
+        # check if torrent_removed_alert happened already for a handle.
+        # Instead we call find_torrent() in the writer, as this is synchronized
+        # with posting add_torrent_alert and torrent_removed_alert.
+        # See https://github.com/arvidn/libtorrent/issues/5112
+        if isinstance(alert, lt.save_resume_data_alert):
+            self._save_atp(alert.params, alert.handle)
+        elif isinstance(alert, lt.add_torrent_alert):
+            if alert.error.value():
+                return
+            # NB: If someone calls async_add_torrent() without
+            # duplicate_is_error and the torrent exists, we will get an
+            # add_torrent_alert with the params they passed, NOT the original
+            # or current params.
+            self._save_atp(alert.params, alert.handle, ignore_if_exists=True)
+        elif isinstance(alert, lt.torrent_removed_alert):
+            self._schedule_write(
+                alert.info_hash, self._delete, alert.info_hash
+            )
+        elif isinstance(alert, lt.metadata_received_alert):
+            handle = alert.handle
+
+            async def save_torrent_file() -> None:
+                try:
+                    with ltpy.translate_exceptions():
+                        # DOES block
+                        ti = await concurrency.to_thread(handle.torrent_file)
+                except ltpy.InvalidTorrentHandleError:
+                    return
+                assert ti is not None
+                self._schedule_write(
+                    ti.info_hash(),
+                    self._maybe_write,
+                    handle,
+                    info_section=ti.info_section(),  # type: ignore
+                )
+
+            asyncio.create_task(save_torrent_file())
+        elif isinstance(
+            alert,
+            (
+                lt.cache_flushed_alert,
+                lt.torrent_paused_alert,
+                lt.torrent_finished_alert,
+                lt.file_renamed_alert,
+                lt.storage_moved_alert,
+            ),
+        ):
+            self._safe_save(
+                alert.handle, flags=lt.save_resume_flags_t.only_if_modified
             )
 
-        self._receiver_task.terminate()
-        self._receiver_task.join()
-
-    def save(self, handle: lt.torrent_handle, flags: int = 0) -> None:
-        try:
+    def _safe_save(self, handle: lt.torrent_handle, flags: int = None) -> None:
+        with contextlib.suppress(ltpy.InvalidTorrentHandleError):
             with ltpy.translate_exceptions():
-                # Does not block
-                handle.save_resume_data(flags=flags)
-        except ltpy.InvalidTorrentHandleError:
-            pass
-        else:
-            self._counter.inc(1)
+                if flags is None:
+                    # Does not block
+                    handle.save_resume_data()
+                else:
+                    # Does not block
+                    handle.save_resume_data(flags=flags)
 
-    def save_all(self, flags: int = 0) -> None:
+    def _save_atp(
+        self,
+        atp: lt.add_torrent_params,
+        handle: lt.torrent_handle,
+        ignore_if_exists=False,
+    ) -> None:
+        info_section: Optional[bytes] = None
+        if atp.ti is not None:
+            with ltpy.translate_exceptions():
+                info_section = atp.ti.info_section()  # type: ignore
+
+        # NB: The add_torrent_params object is managed with alert memory. We
+        # must do write_resume_data() before the next pop_alerts()
+
+        # NB: We remove the info section (b"info") in the writer, as it's
+        # handled separately. It would be more efficient to set ti to None and
+        # use write_resume_data_buf(), but it turns out this mutation is
+        # visible to other alert handlers.
+        with ltpy.translate_exceptions():
+            bdecoded = lt.write_resume_data(atp)
+
+        self._schedule_write(
+            atp.info_hash,
+            self._maybe_write,
+            handle,
+            info_section=info_section,
+            resume_data=bdecoded,
+            ignore_if_exists=ignore_if_exists,
+        )
+
+    async def _periodic_save_all(self) -> None:
+        while True:
+            await asyncio.sleep(self.SAVE_ALL_INTERVAL)
+            await self._save_all_if_modified(flags=0)
+
+    async def _run(self) -> None:
+        periodic = asyncio.create_task(self._periodic_save_all())
+        alert_handler = asyncio.create_task(self._handle_alerts())
+
+        _LOG.info("ResumeService started")
+        await self._closed
+        _LOG.info("ResumeService shutting down")
+
+        periodic.cancel()
+
+        # Design notes: We'd like to explicitly wait for all
+        # save_resume_data_alerts and all triggering alerts
+        # (storage_moved_alert, etc) to be received. That would require
+        # tracking many calls like move_storage() across all code, and this may
+        # expand to include other calls. I could not find a good approach to do
+        # this from python. For now, just wait for events with a timeout
+
+        # move_storage() across filesystems may take a long time, so don't
+        # trust a short timeout. We *could* do this by waiting for alerts but
+        # maybe we'll use command counts pretty soon
+        while True:
+            num_moving_storage = await self._num_moving_storage()
+            if num_moving_storage == 0:
+                break
+            _LOG.info(
+                "shutdown: waiting for %d torrents to be done moving storage",
+                num_moving_storage,
+            )
+            await asyncio.sleep(1)
+
+        # final save
+        await self._save_all_if_modified(
+            flags=lt.save_resume_flags_t.flush_disk_cache
+        )
+
+        _LOG.info("shutdown: waiting for final resume data")
+        while True:
+            self._got_alert.clear()
+            await concurrency.wait_first(
+                [self._got_alert.wait(), asyncio.sleep(1)]
+            )
+            if not self._got_alert.is_set():
+                break
+
+        alert_handler.cancel()
+
+        _LOG.debug("shutdown: waiting for resume data write jobs to complete")
+        try:
+            await asyncio.wait_for(self._writes.wait_zero(), self.TIMEOUT)
+        except asyncio.TimeoutError:
+            warnings.warn(
+                "Timed out waiting for resume data write jobs. This is a bug. "
+                "Resume data is probably incomplete"
+            )
+
+    def start(self) -> None:
+        assert self._task is None
+        self._task = asyncio.create_task(self._run())
+
+    def close(self) -> None:
+        if not self._closed.done():
+            self._closed.set_result(None)
+
+    async def wait_closed(self) -> None:
+        assert self._task is not None
+        await self._task
+
+    async def _save_all_if_modified(self, *, flags: int) -> None:
         # Loading all handles at once in python could be cumbersome at large
         # scales, but I don't know of a better way to do this right now
         with ltpy.translate_exceptions():
             # DOES block
-            handles = self._session.get_torrents()
-        _LOG.debug("saving fastresume data for %d torrents", len(handles))
-        for handle in handles:
-            self.save(handle, flags=flags)
+            handles = await concurrency.to_thread(self._session.get_torrents)
+        # Dispatch need_save_resume_data() all at once
+        dispatch = [
+            (h, concurrency.to_thread(h.need_save_resume_data))
+            for h in handles
+        ]
+        # We don't use save_resume_data(flags=only_if_modified), to avoid
+        # overloading the alert queue
+        for handle, need_save_resume_data in dispatch:
+            with contextlib.suppress(ltpy.InvalidTorrentHandleError):
+                with ltpy.translate_exceptions():
+                    if await need_save_resume_data:
+                        handle.save_resume_data(flags=flags)
+
+    async def _num_moving_storage(self) -> int:
+        with ltpy.translate_exceptions():
+            # DOES block
+            handles = await concurrency.to_thread(self._session.get_torrents)
+        statuses = await asyncio.gather(
+            *[concurrency.to_thread(h.status) for h in handles]
+        )
+        return sum(status.moving_storage for status in statuses)

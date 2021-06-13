@@ -13,8 +13,8 @@
 
 import fastapi
 
-from tvaf import services
-import tvaf.routers.data as data_router
+from . import services
+from .routers import data as data_router
 
 APP = fastapi.FastAPI()
 
@@ -22,10 +22,10 @@ APP.include_router(data_router.ROUTER)
 
 
 @APP.on_event("startup")
-def _startup() -> None:
-    services.startup()
+async def _startup() -> None:
+    await services.startup()
 
 
 @APP.on_event("shutdown")
-def _shutdown() -> None:
-    services.shutdown()
+async def _shutdown() -> None:
+    await services.shutdown()

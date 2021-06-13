@@ -11,205 +11,155 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-import concurrent.futures
+import asyncio
 import os
-import os.path
+import pathlib
 import tempfile
+from typing import List
+from typing import Sequence
 
 import libtorrent as lt
 
+from tvaf import concurrency
 from tvaf import ltpy
 
 from . import lib
 from . import request_test_utils
 
 
-class TestAddRemove(request_test_utils.RequestServiceTestCase):
-    def test_add_remove(self) -> None:
-        req = self.add_req()
-        self.wait_for_torrent()
-        self.assertEqual(
-            [h.info_hash() for h in self.session.get_torrents()],
-            [self.torrent.sha1_hash],
-        )
-        self.service.discard_request(req)
-        with self.assertRaises(ltpy.CanceledError):
-            req.read(timeout=5)
-
-    def test_shutdown(self) -> None:
-        req = self.add_req()
-        self.service.terminate()
-        with self.assertRaises(ltpy.CanceledError):
-            req.read(timeout=5)
-
-    def test_already_shutdown(self) -> None:
-        self.service.terminate()
-        req = self.add_req()
-        with self.assertRaises(ltpy.CanceledError):
-            req.read(timeout=5)
-
-
-class TestRead(request_test_utils.RequestServiceTestCase):
-    def test_all(self) -> None:
-        req = self.add_req()
-
-        self.feed_pieces()
-
-        data = request_test_utils.read_all(req)
-        self.assertEqual(data, self.torrent.data)
-
-    def test_unaligned_multi_pieces(self) -> None:
-        start = self.torrent.piece_length // 2
-        stop = min(start + self.torrent.piece_length, self.torrent.length)
-        req = self.add_req(start=start, stop=stop)
-
-        self.feed_pieces()
-
-        data = request_test_utils.read_all(req)
-
-        self.assertEqual(data, self.torrent.data[start:stop])
-
-    def test_unaligned_single_piece(self) -> None:
-        start = self.torrent.piece_length // 4
-        stop = 3 * self.torrent.piece_length // 4
-        req = self.add_req(start=start, stop=stop)
-
-        self.feed_pieces()
-
-        data = request_test_utils.read_all(req)
-
-        self.assertEqual(data, self.torrent.data[start:stop])
-
-    def test_existing_torrent(self) -> None:
-        req = self.add_req()
-
-        self.feed_pieces()
-
-        request_test_utils.read_all(req)
-
-        req = self.add_req()
-        data = request_test_utils.read_all(req, msg="second read")
-
-        self.assertEqual(data, self.torrent.data)
-
-    def test_simultaneous(self) -> None:
-        req1 = self.add_req()
-        req2 = self.add_req()
-        executor = concurrent.futures.ThreadPoolExecutor()
-        future1 = executor.submit(request_test_utils.read_all, req1)
-        future2 = executor.submit(request_test_utils.read_all, req2)
-
-        self.feed_pieces()
-
-        self.assertEqual(future1.result(), self.torrent.data)
-        self.assertEqual(future2.result(), self.torrent.data)
-
-    def test_two_readers(self) -> None:
-        req1 = self.add_req()
-        req2 = self.add_req()
-
-        self.feed_pieces()
-
-        data1 = request_test_utils.read_all(req1)
-        data2 = request_test_utils.read_all(req2)
-
-        self.assertEqual(data1, self.torrent.data)
-        self.assertEqual(data2, self.torrent.data)
-
-    def test_download(self) -> None:
-        seed = lib.create_isolated_session_service().session
-        seed_dir = tempfile.TemporaryDirectory()
-        atp = self.torrent.atp()
-        atp.save_path = seed_dir.name
-        atp.flags &= ~lt.torrent_flags.paused
-        handle = seed.add_torrent(atp)
-        # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
-        # checking silently fails in libtorrent 1.2.8.
-        request_test_utils.wait_done_checking_or_error(handle)
-        for i, piece in enumerate(self.torrent.pieces):
-            # NB: bug in libtorrent where add_piece accepts str but not bytes
-            handle.add_piece(i, piece.decode(), 0)
-
-        req = self.add_req()
-        self.wait_for_torrent().connect_peer(("127.0.0.1", seed.listen_port()))
-
-        # The peer connection takes a long time, not sure why
-        data = request_test_utils.read_all(req, timeout=60)
-        self.assertEqual(data, self.torrent.data)
-
-    def test_file_error(self) -> None:
-        # Create a file in tempdir, try to use it as the save_path
-        path = os.path.join(self.tempdir.name, "file.txt")
-        with open(path, mode="w"):
+class TestReadPiecesWithCancellation(
+    request_test_utils.RequestServiceTestCase
+):
+    async def test_remove_before_start(self) -> None:
+        self.session.remove_torrent(self.handle)
+        # Ensure removal happened before we do read_pieces()
+        while await concurrency.to_thread(self.session.get_torrents):
             pass
-
-        atp = self.torrent.atp()
-        atp.save_path = path
-        handle = self.session.add_torrent(atp)
-        req = self.add_req(handle=handle)
-        self.feed_pieces()
-
-        with self.assertRaises(NotADirectoryError):
-            request_test_utils.read_all(req)
-
-    def test_read_checked_pieces(self) -> None:
-        # Download a torrent
-        req = self.add_req()
-        self.feed_pieces()
-        data = request_test_utils.read_all(req)
-        self.assertEqual(data, self.torrent.data)
-
-        # query_save_path not bound in python
-        save_path = self.wait_for_torrent().status(flags=128).save_path
-
-        # Wait for the file to be written to disk
-        for _ in lib.loop_until_timeout(5, msg="write file"):
-            path = os.path.join(save_path, self.torrent.files[0].path.decode())
-            if os.path.exists(path):
-                data = open(path, mode="rb").read()
-                if data == self.torrent.data:
-                    break
-
-        # Create a new session
-        self.teardown_session()
-        self.init_session()
-        req = self.add_req()
-
-        # We should be able to read the data without feeding pieces
-        data = request_test_utils.read_all(req)
-        self.assertEqual(data, self.torrent.data)
-
-    def test_read_after_cancelled_read(self) -> None:
-        # Start reading
-        req = self.add_req()
-        # Feed one piece, so the torrent stays in the session
-        self.feed_pieces(piece_indexes=(0,))
-
-        # Wait for pieces to be prioritized
-        for _ in lib.loop_until_timeout(5, msg="prioritize"):
-            if all(self.wait_for_torrent().get_piece_priorities()):
-                break
-
-        # Cancel the request -- resets piece deadlines
-        self.service.discard_request(req)
-
-        # Wait until deadlines have been reset
-        for _ in lib.loop_until_timeout(5, msg="deprioritize"):
-            if not any(self.wait_for_torrent().get_piece_priorities()):
-                break
-
-        # Recreate the request -- listens for read_piece_alert
-        req = self.add_req()
-        # Feed all pieces and check that we can read the data
-        self.feed_pieces()
-
-        data = request_test_utils.read_all(req)
-        self.assertEqual(data, self.torrent.data)
-
-
-class TestRemoveTorrent(request_test_utils.RequestServiceTestCase):
-    def test_with_active_requests(self) -> None:
-        req = self.add_req()
-        self.session.remove_torrent(self.wait_for_torrent())
+        it = self.service.read_pieces(self.handle, self.all_pieces)
         with self.assertRaises(ltpy.InvalidTorrentHandleError):
-            req.read(timeout=5)
+            await asyncio.wait_for(it.__anext__(), 5)
+
+    async def test_remove_after_start(self) -> None:
+        # Schedule removal after we start read_pieces()
+        async def do_remove() -> None:
+            self.session.remove_torrent(self.handle)
+
+        asyncio.create_task(do_remove())
+        it = self.service.read_pieces(self.handle, self.all_pieces)
+        with self.assertRaises(ltpy.InvalidTorrentHandleError):
+            await asyncio.wait_for(it.__anext__(), 5)
+
+    async def test_shutdown(self) -> None:
+        async def do_close() -> None:
+            self.service.close()
+
+        asyncio.create_task(do_close())
+        it = self.service.read_pieces(self.handle, self.all_pieces)
+        with self.assertRaises(asyncio.CancelledError):
+            await asyncio.wait_for(it.__anext__(), 5)
+
+    async def test_file_error(self) -> None:
+        self.session.remove_torrent(self.handle)
+        # Create a file in tempdir, try to use it as the save_path
+        path = pathlib.Path(self.tempdir.name) / "file.txt"
+        await concurrency.to_thread(path.write_bytes, b"")
+        atp = self.torrent.atp()
+        atp.save_path = str(path)
+        self.handle = await concurrency.to_thread(
+            self.session.add_torrent, atp
+        )
+        await self.feed_pieces()
+
+        it = self.service.read_pieces(self.handle, self.all_pieces)
+        with self.assertRaises(NotADirectoryError):
+            await asyncio.wait_for(it.__anext__(), 5)
+
+    # TODO: test de-prioritization
+
+
+class TestReadPieces(request_test_utils.RequestServiceTestCase):
+    async def read(self, pieces: Sequence[int]) -> List[bytes]:
+        result: List[bytes] = []
+        it = self.service.read_pieces(self.handle, pieces)
+        async for piece in it:
+            result.append(piece)
+        return result
+
+    async def test_read_all(self) -> None:
+        await self.feed_pieces()
+        pieces = await asyncio.wait_for(self.read(self.all_pieces), 5)
+        self.assertEqual(pieces, self.torrent.pieces)
+
+    async def test_out_of_order(self) -> None:
+        await self.feed_pieces()
+        pieces = await asyncio.wait_for(self.read([1, 0]), 5)
+        self.assertEqual(
+            pieces, [self.torrent.pieces[1], self.torrent.pieces[0]]
+        )
+
+    async def test_duplicates(self) -> None:
+        await self.feed_pieces()
+        pieces = await asyncio.wait_for(self.read([0, 0]), 5)
+        self.assertEqual(
+            pieces, [self.torrent.pieces[0], self.torrent.pieces[0]]
+        )
+
+    async def test_repetition(self) -> None:
+        await self.feed_pieces()
+        for _ in range(5):
+            pieces = await asyncio.wait_for(self.read(self.all_pieces), 5)
+            self.assertEqual(pieces, self.torrent.pieces)
+
+    async def test_concurrent(self) -> None:
+        task1 = asyncio.create_task(self.read(self.all_pieces))
+        task2 = asyncio.create_task(self.read(self.all_pieces))
+        await self.feed_pieces()
+        pieces_list = await asyncio.wait_for(asyncio.gather(task1, task2), 5)
+        for pieces in pieces_list:
+            self.assertEqual(pieces, self.torrent.pieces)
+
+    async def test_download(self) -> None:
+        seed = lib.create_isolated_session_service().session
+        seed_dir = await concurrency.to_thread(tempfile.TemporaryDirectory)
+        try:
+            atp = self.torrent.atp()
+            atp.save_path = seed_dir.name
+            atp.flags &= ~lt.torrent_flags.paused
+            seed_handle = await concurrency.to_thread(seed.add_torrent, atp)
+            # https://github.com/arvidn/libtorrent/issues/4980: add_piece()
+            # while checking silently fails in libtorrent 1.2.8.
+            await lib.wait_done_checking_or_error(seed_handle)
+            for i, piece in enumerate(self.torrent.pieces):
+                # NB: bug in libtorrent where add_piece accepts str but not
+                # bytes
+                seed_handle.add_piece(i, piece.decode(), 0)
+
+            self.handle.connect_peer(("127.0.0.1", seed.listen_port()))
+
+            # The peer connection takes a long time, not sure why
+            pieces = await asyncio.wait_for(self.read(self.all_pieces), 60)
+        finally:
+            await concurrency.to_thread(seed_dir.cleanup)
+        self.assertEqual(pieces, self.torrent.pieces)
+
+    async def test_read_checked_pieces(self) -> None:
+        # write data to disk
+        path = pathlib.Path(self.tempdir.name) / os.fsdecode(
+            self.torrent.files[0].path
+        )
+        await concurrency.to_thread(
+            path.write_bytes, self.torrent.files[0].data
+        )
+        # recheck the torrent
+        self.handle.force_recheck()
+
+        pieces = await asyncio.wait_for(self.read(self.all_pieces), 5)
+        self.assertEqual(pieces, self.torrent.pieces)
+
+    async def test_read_after_cancelled_read(self) -> None:
+        await self.feed_pieces()
+        it = self.service.read_pieces(self.handle, self.all_pieces)
+        async for _ in it:
+            break
+        pieces = await asyncio.wait_for(self.read(self.all_pieces), 5)
+        self.assertEqual(pieces, self.torrent.pieces)

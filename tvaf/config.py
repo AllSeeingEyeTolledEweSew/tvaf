@@ -17,14 +17,16 @@ import json
 import os
 import pathlib
 from typing import Any
+from typing import AsyncContextManager
+from typing import AsyncIterator
 from typing import Callable
-from typing import ContextManager
-from typing import Iterator
 from typing import MutableMapping
 from typing import Optional
 from typing import Type
 from typing import TypeVar
 from typing import Union
+
+from . import concurrency
 
 # Design notes:
 
@@ -70,19 +72,21 @@ _T = TypeVar("_T")
 
 class Config(dict, MutableMapping[str, Any]):
     @classmethod
-    def from_disk(cls: Type["_C"], path: Union[str, os.PathLike]) -> "_C":
+    async def from_disk(
+        cls: Type["_C"], path: Union[str, os.PathLike]
+    ) -> "_C":
         path = pathlib.Path(path)
-        with path.open() as fp:
-            try:
-                data = json.load(fp)
-            except json.JSONDecodeError as exc:
-                raise InvalidConfigError(str(exc)) from exc
+        contents = await concurrency.to_thread(path.read_text)
+        try:
+            data = json.loads(contents)
+        except json.JSONDecodeError as exc:
+            raise InvalidConfigError(str(exc)) from exc
         return cls(data)
 
-    def write_to_disk(self, path: Union[str, os.PathLike]) -> None:
+    async def write_to_disk(self, path: Union[str, os.PathLike]) -> None:
         path = pathlib.Path(path)
-        with path.open(mode="w") as fp:
-            json.dump(self, fp, sort_keys=True, indent=4)
+        contents = json.dumps(self, sort_keys=True, indent=4)
+        await concurrency.to_thread(path.write_text, contents)
 
     def _get(self, key: str, type_: Type[_T]) -> Optional[_T]:
         value = self.get(key)
@@ -120,16 +124,20 @@ _C = TypeVar("_C", bound=Config)
 
 class HasConfig(abc.ABC):
     @abc.abstractmethod
-    @contextlib.contextmanager
-    def stage_config(self, config: Config) -> Iterator[None]:
+    @contextlib.asynccontextmanager
+    async def stage_config(self, config: Config) -> AsyncIterator[None]:
         yield
 
-    def set_config(self, config: Config) -> None:
-        with self.stage_config(config):
+    async def set_config(self, config: Config) -> None:
+        async with self.stage_config(config):
             pass
 
 
-def set_config(config: Config, *stages: Callable[[Config], ContextManager]):
-    with contextlib.ExitStack() as stack:
+@contextlib.asynccontextmanager
+async def stage_config(
+    config: Config, *stages: Callable[[Config], AsyncContextManager]
+) -> AsyncIterator[None]:
+    async with contextlib.AsyncExitStack() as stack:
         for stage in stages:
-            stack.enter_context(stage(config))
+            await stack.enter_async_context(stage(config))
+        yield

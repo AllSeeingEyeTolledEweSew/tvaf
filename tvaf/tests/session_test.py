@@ -11,6 +11,7 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+import asyncio
 import unittest
 
 import libtorrent as lt
@@ -62,13 +63,13 @@ class TestSession(unittest.TestCase):
 
         # Test we can unset alert mask via config
         config["session_alert_mask"] = 0
-        session_service.set_config(config)
+        asyncio.run(session_service.set_config(config))
         settings = session_service.session.get_settings()
         self.assertEqual(settings["alert_mask"], 1 | 8)
 
         # Test we can change alert mask via config
         config["session_alert_mask"] = 4
-        session_service.set_config(config)
+        asyncio.run(session_service.set_config(config))
         settings = session_service.session.get_settings()
         self.assertEqual(settings["alert_mask"], 1 | 4 | 8)
 
@@ -105,13 +106,13 @@ class TestSession(unittest.TestCase):
 
         # Change config
         config["session_close_redundant_connections"] = False
-        session_service.set_config(config)
+        asyncio.run(session_service.set_config(config))
 
         settings = session_service.session.get_settings()
         self.assertEqual(settings["close_redundant_connections"], False)
 
         # Test we can set_config with no changes
-        session_service.set_config(config)
+        asyncio.run(session_service.set_config(config))
         settings = session_service.session.get_settings()
         self.assertEqual(settings["close_redundant_connections"], False)
 
@@ -120,9 +121,13 @@ class TestSession(unittest.TestCase):
         session_service = session_lib.SessionService(config=config)
 
         config["session_close_redundant_connections"] = False
-        with self.assertRaises(DummyException):
-            with session_service.stage_config(config):
+
+        async def stage_and_fail() -> None:
+            async with session_service.stage_config(config):
                 _raise_dummy()
+
+        with self.assertRaises(DummyException):
+            asyncio.run(stage_and_fail())
 
         settings = session_service.session.get_settings()
         self.assertEqual(settings["close_redundant_connections"], True)

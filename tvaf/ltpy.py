@@ -20,6 +20,8 @@ from typing import Dict
 from typing import Generator
 from typing import Optional
 from typing import Tuple
+from typing import Type
+from typing import TypeVar
 
 import libtorrent as lt
 
@@ -190,8 +192,17 @@ class DuplicateTorrentError(LibtorrentError):
     pass
 
 
+_C = TypeVar("_C", bound=LibtorrentError)
+
+
 class InvalidTorrentHandleError(LibtorrentError):
-    pass
+    @classmethod
+    def create(cls: Type[_C]) -> _C:
+        ec = lt.error_code(
+            LibtorrentErrorValue.INVALID_TORRENT_HANDLE,
+            lt.libtorrent_category(),
+        )
+        return cls(ec)
 
 
 class InvalidSessionHandleError(LibtorrentError):

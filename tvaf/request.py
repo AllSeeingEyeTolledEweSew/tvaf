@@ -13,261 +13,169 @@
 
 """Data access functions for tvaf."""
 
+import asyncio
 import collections
-import collections.abc
-import enum
-import errno
+import contextlib
 import logging
-import threading
+from typing import AsyncGenerator
+from typing import cast
 from typing import Dict
-from typing import Iterable
+from typing import List
+from typing import MutableMapping
 from typing import Optional
-from typing import Set
-from weakref import WeakValueDictionary
+from typing import Sequence
+import weakref
 
 import libtorrent as lt
 
-from tvaf import driver as driver_lib
-from tvaf import ltpy
-from tvaf import resume as resume_lib
-from tvaf import task as task_lib
-from tvaf import util
-from tvaf import xmemoryview as xmv
+from . import concurrency
+from . import driver as driver_lib
+from . import ltpy
 
 _LOG = logging.getLogger(__name__)
 
-DEFAULT_DOWNLOAD_DIR_NAME = "downloads"
 
+# set_piece_deadline() has very different behavior depending on the flags
+# argument and the torrent's current state:
+#
+# - set_piece_deadline(i, x, alert_when_available):
+#   - if we have piece i:
+#     - ...is equivalent to read_piece(i)
+#     - ...NOT idempotent, each call generates one read_piece_alert
+#   - if we don't have piece i:
+#     - ...sets the flag
+#     - ...is idempotent
+#
+# - set_piece_deadline(i, x, 0):
+#   - if we have piece i:
+#     - ...has no effect
+#   - if we don't have piece i:
+#     - ...clears the flag
+#     - ...if the flag was previously set, will fire alert with ECANCELED
+#     - ...is idempotent
 
-def _mk_cancelederror() -> ltpy.CanceledError:
-    return ltpy.CanceledError(
-        lt.error_code(errno.ECANCELED, lt.generic_category())
-    )
+# set_piece_deadline(i, x) always stores the deadline internally as x +
+# <current unix time in milliseconds>. Pieces are downloaded in deadline order,
+# before any pieces without deadline. set_piece_deadline() always sets the
+# piece priority to 7
 
+# reset_piece_deadline() and clear_piece_deadlines() always set the priority
+# of the given piece(s) to 1. If a piece is outstanding and has
+# alert_when_available set, they will fire read_piece_alert with ECANCELED
 
-class Mode(enum.Enum):
+# setting a piece's priority to 0 has the same effect as
+# reset_piece_deadline(), except that the priority becomes 0 instead of 1
 
-    READ = "read"
-    READAHEAD = "readahead"
-
-
-class Request:
-    def __init__(
-        self,
-        *,
-        handle: lt.torrent_handle,
-        start: int,
-        stop: int,
-        mode: Mode,
-    ):
-        self.handle = handle
-        self.start = start
-        self.stop = stop
-        self.mode = mode
-
-        self._condition = threading.Condition()
-        self._chunks: Dict[int, xmv.MemoryView] = {}
-        self._offset = self.start
-        self._exception: Optional[BaseException] = None
-
-    def set_exception(self, exception: BaseException) -> None:
-        with self._condition:
-            self._exception = exception
-            self._condition.notify_all()
-
-    def feed_chunk(self, offset: int, chunk: xmv.MemoryView) -> None:
-        if self.mode != Mode.READ:
-            raise ValueError("not a read request")
-        with self._condition:
-            if offset < self.start:
-                chunk = chunk[self.start - offset :]
-                offset = self.start
-            if offset + len(chunk) > self.stop:
-                chunk = chunk[: self.stop - offset]
-            if not chunk:
-                return
-            self._chunks[offset] = chunk
-            self._condition.notify_all()
-
-    def tell(self) -> int:
-        with self._condition:
-            return self._offset
-
-    def read(self, timeout: float = None) -> Optional[xmv.MemoryView]:
-        if self.mode != Mode.READ:
-            raise ValueError("not a read request")
-        with self._condition:
-            if self._offset >= self.stop:
-                return xmv.EMPTY
-
-            def ready() -> bool:
-                if self._offset in self._chunks:
-                    return True
-                if self._exception is not None:
-                    return True
-                return False
-
-            if not self._condition.wait_for(ready, timeout=timeout):
-                return None
-            if self._exception:
-                raise self._exception
-            chunk = self._chunks.pop(self._offset)
-            self._offset += len(chunk)
-            return chunk
-
-
-def _get_request_pieces(
-    request: Request, ti: lt.torrent_info
-) -> Iterable[int]:
-    return iter(
-        range(
-            *util.range_to_pieces(
-                ti.piece_length(), request.start, request.stop
-            )
-        )
-    )
+# Design notes: correspondence between read_piece_alert and futures/jobs is
+# tricky. We could tighten it by tracking when we generate ECANCELED alerts by
+# prioritizing from nonzero to zero, and propagate only unexpected errors. The
+# upside is that we would respect external code that deprioritizes pieces.
+# However we would be sensitive to an ECANCELED that was pending when we start
+# up
 
 
 class _State:
 
     DEADLINE_INTERVAL = 1000
 
-    def __init__(self, handle: lt.torrent_handle):
+    def __init__(self, handle: lt.torrent_handle, session: lt.session):
         self._handle = handle
-        self._ti: Optional[lt.torrent_info] = None
-        # OrderedDict is to preserve FIFO order for satisfying requests. We use
-        # a mapping like {id(obj): obj} to emulate an ordered set
-        # NB: As of 3.8, OrderedDict is not subscriptable
-        self._requests = (
-            collections.OrderedDict()
-        )  # type: collections.OrderedDict[int, Request]
+        self._session = session
+        # OrderdDict to preserve FIFO order for prioritizing requests
+        self._reads: Dict[
+            int, asyncio.Future[bytes]
+        ] = collections.OrderedDict()
+        self._readers: Dict[int, int] = {}
+        self._we_set_prios: Dict[int, int] = {}
 
-        self._piece_to_readers: Dict[int, Set[Request]] = {}
-        # NB: As of 3.8, OrderedDict is not subscriptable
-        self._piece_queue = (
-            collections.OrderedDict()
-        )  # type: collections.OrderedDict[int, int]
+    def _inc_read(self, pieces: Sequence[int]) -> None:
+        prioritize = False
+        for piece in pieces:
+            self._readers[piece] = self._readers.get(piece, 0) + 1
+            if piece not in self._reads:
+                self._reads[piece] = asyncio.get_event_loop().create_future()
+                prioritize = True
+        if prioritize:
+            self.prioritize()
 
-        self._exception: Optional[BaseException] = None
+    def _dec_read(self, pieces: Sequence[int]) -> None:
+        prioritize = False
+        for piece in pieces:
+            self._readers[piece] -= 1
+            assert self._readers[piece] >= 0
+            if self._readers[piece] == 0:
+                self._readers.pop(piece)
+                future = self._reads.pop(piece)
+                if not future.done():
+                    prioritize = True
+                else:
+                    # mark as retrieved
+                    future.exception()
+        if prioritize:
+            self.prioritize()
 
-    def _get_request_pieces(self, request: Request) -> Iterable[int]:
-        assert self._ti is not None
-        return _get_request_pieces(request, self._ti)
+    # NB: This is a "naive" AsyncGenerator; pieces are prioritized in the
+    # "setup" (first __anext__() call) and deprioritized in a finally clause.
+    # This means that order of priorities between two read_pieces() calls is a
+    # race, and deprioritization may be delayed until gc.
+    async def read_pieces(
+        self, pieces: Sequence[int]
+    ) -> AsyncGenerator[bytes, None]:
+        async def check() -> None:
+            if not await concurrency.to_thread(
+                ltpy.handle_in_session, self._handle, self._session
+            ):
+                self.set_exception(ltpy.InvalidTorrentHandleError.create())
 
-    def _index_request(self, request: Request) -> None:
-        if self._ti is None:
-            return
-        if request.mode != Mode.READ:
-            return
-        for piece in self._get_request_pieces(request):
-            if piece not in self._piece_to_readers:
-                self._piece_to_readers[piece] = set()
-            self._piece_to_readers[piece].add(request)
+        asyncio.create_task(check())
 
-    def add(self, *requests: Request) -> None:
-        for request in requests:
-            self._requests[id(request)] = request
-            self._index_request(request)
+        # Design notes: I tried to write this as a simpler read_piece()
+        # function, but that had to be synchronous to preserve order for
+        # prioritization, and complex call usage is required to avoid holding
+        # memory for the lifetime of a request
+        self._inc_read(pieces)
+        dec_index = 0
 
-    def _deindex_request(self, request: Request) -> None:
-        if self._ti is None:
-            return
-        if request.mode != Mode.READ:
-            return
-        for piece in self._get_request_pieces(request):
-            readers = self._piece_to_readers.get(piece, set())
-            readers.discard(request)
-            if not readers:
-                self._piece_to_readers.pop(piece, None)
+        try:
+            for i, piece in enumerate(pieces):
+                yield await asyncio.shield(self._reads[piece])
+                # Release memory early
+                self._dec_read([piece])
+                dec_index = i + 1
+        finally:
+            self._dec_read(pieces[dec_index:])
 
-    def discard(self, *requests: Request, exception: BaseException) -> None:
-        for request in requests:
-            request.set_exception(exception)
-            self._requests.pop(id(request))
-            self._deindex_request(request)
+    def prioritize(self) -> None:
+        time_critical = list(self._reads)
+        # TODO: combine readaheads and fills
 
-    def get_ti(self) -> Optional[lt.torrent_info]:
-        return self._ti
+        try:
+            with ltpy.translate_exceptions():
+                self._prioritize_inner(time_critical)
+        except BaseException as exc:
+            self.set_exception(exc)
 
-    def set_ti(self, ti: lt.torrent_info) -> None:
-        if self._ti is not None:
-            return
-        self._ti = ti
-        for request in list(self._requests.values()):
-            self._index_request(request)
-
-    def update_priorities(self) -> None:
-        if self._ti is None:
-            return
-
-        self._piece_queue.clear()
-
-        for request in self._requests.values():
-            if request.mode != Mode.READ:
-                continue
-            for piece in self._get_request_pieces(request):
-                if piece not in self._piece_queue:
-                    self._piece_queue[piece] = piece
-
-        for request in self._requests.values():
-            if request.mode != Mode.READAHEAD:
-                continue
-            for piece in self._get_request_pieces(request):
-                if piece not in self._piece_queue:
-                    self._piece_queue[piece] = piece
-
-        self._apply_priorities()
-
-    # set_piece_deadline() has very different behavior depending on the flags
-    # argument and the torrent's current state:
-    #
-    # - set_piece_deadline(i, x, alert_when_available):
-    #   - if we have piece i:
-    #     - ...is equivalent to read_piece(i)
-    #     - ...NOT idempotent, each call generates one read_piece_alert
-    #   - if we don't have piece i:
-    #     - ...sets the flag
-    #     - ...is idempotent
-    #
-    # - set_piece_deadline(i, x, 0):
-    #   - if we have piece i:
-    #     - ...has no effect
-    #   - if we don't have piece i:
-    #     - ...clears the flag
-    #     - ...if the flag was previously set, will fire alert with ECANCELED
-    #     - ...is idempotent
-
-    # set_piece_deadline(i, x) always stores the deadline internally as x +
-    # <current unix time in milliseconds>. Pieces are downloaded in deadline
-    # order, before any pieces without deadline. set_piece_deadline() always
-    # sets the piece priority to 7
-
-    # reset_piece_deadline() and clear_piece_deadlines() always set the
-    # priority of the given piece(s) to 1. If a piece is outstanding and has
-    # alert_when_available set, they will fire read_piece_alert with ECANCELED
-
-    # setting a piece's priority to 0 has the same effect as
-    # reset_piece_deadline(), except that the priority becomes 0 instead of 1
-
-    def _apply_priorities_inner(self) -> None:
-        if self._ti is None:
-            return
-
-        if self._piece_queue:
+    def _prioritize_inner(self, time_critical: List[int]) -> None:
+        if time_critical:
+            # Does not block
             self._handle.set_flags(
                 lt.torrent_flags.auto_managed, lt.torrent_flags.auto_managed
             )
 
-        priorities = [0] * self._ti.num_pieces()
+        # This will re-fire torrent_error_alert, if any, in lieu of calling
+        # status()
+        self._handle.clear_error()
+
+        prios: Dict[int, int] = {}
 
         # Update deadlines in reverse order, to avoid a temporary state where
         # the existing deadline of a last-priority piece is earlier than the
         # new deadline of a first-priority piece
-        for seq, piece in enumerate(reversed(self._piece_queue)):
-            seq = len(self._piece_queue) - seq - 1
+        for seq, piece in enumerate(reversed(time_critical)):
+            seq = len(time_critical) - seq - 1
             # We want a read_piece_alert if there are any outstanding
             # readers
-            want_read = piece in self._piece_to_readers
+            want_read = piece in self._reads
             if want_read:
                 flags = lt.deadline_flags_t.alert_when_available
             else:
@@ -275,237 +183,112 @@ class _State:
             # Space out the deadline values, so the advancement of unix time
             # doesn't interfere with our queue order
             deadline = seq * self.DEADLINE_INTERVAL
+            # Does not block
             self._handle.set_piece_deadline(piece, deadline, flags=flags)
-            priorities[piece] = 7
+            prios[piece] = 7
 
-        self._handle.prioritize_pieces(priorities)
+        prios_to_set = dict(prios)
+        unset_prios = [p for p in self._we_set_prios if p not in prios]
+        # Unset existing priorities
+        # TODO: use a default priority to correspond to share_mode
+        prios_to_set.update({p: 0 for p in unset_prios})
 
-    def _apply_priorities(self) -> None:
-        with ltpy.translate_exceptions():
-            self._apply_priorities_inner()
+        # Does not block
+        self._handle.prioritize_pieces(list(prios_to_set.items()))
+        self._we_set_prios = prios
 
-    def on_read_piece(
-        self, piece: int, data: bytes, exception: Optional[BaseException]
-    ) -> None:
-        readers = self._piece_to_readers.get(piece, ())
-        if not readers:
-            return
-        if isinstance(exception, ltpy.CanceledError):
-            self._apply_priorities()
-            return
-        del self._piece_to_readers[piece]
-        if exception is not None:
-            self.discard(*readers, exception=exception)
-        else:
-            assert self._ti is not None
+    def set_exception(self, exc: BaseException):
+        for future in self._reads.values():
+            if not future.done():
+                future.set_exception(exc)
 
-            chunk = xmv.MemoryView(obj=data, start=0, stop=len(data))
-            offset = piece * self._ti.piece_length()
-
-            for reader in readers:
-                reader.feed_chunk(offset, chunk)
-
-    def set_exception(self, exception: BaseException) -> None:
-        self.discard(*self._requests.values(), exception=exception)
-        self._exception = exception
-
-    def get_exception(self) -> Optional[BaseException]:
-        return self._exception
-
-    def has_requests(self) -> bool:
-        return bool(self._requests)
+    def handle_alert(self, alert: lt.torrent_alert) -> None:
+        if isinstance(alert, lt.read_piece_alert):
+            future = self._reads.get(alert.piece)
+            if future is None or future.done():
+                return
+            exc = ltpy.exception_from_error_code(alert.error)
+            if exc:
+                if isinstance(exc, ltpy.CanceledError):
+                    self.prioritize()
+                else:
+                    future.set_exception(exc)
+            else:
+                future.set_result(alert.buffer)
+        elif isinstance(alert, lt.torrent_removed_alert):
+            self.set_exception(ltpy.InvalidTorrentHandleError.create())
+        elif isinstance(alert, lt.torrent_error_alert):
+            # These are mostly disk errors
+            exc = ltpy.exception_from_error_code(alert.error)
+            if exc is not None:
+                self.set_exception(exc)
 
     # TODO: pause and resume
-
-    # TODO: baseline priorities
 
     # TODO: handle checking state
 
     # TODO: periodically reissue deadlines
 
 
-class _Task(task_lib.Task):
-    # NB: after the last request is removed, we must no longer mutate the
-    # torrent. To achieve this, only mutate the torrent with the lock held.
+class RequestService:
     def __init__(
-        self,
-        *,
-        handle: lt.torrent_handle,
-        alert_driver: driver_lib.AlertDriver,
-        resume_service: resume_lib.ResumeService,
+        self, *, session: lt.session, alert_driver: driver_lib.AlertDriver
     ):
-        super().__init__(title=f"request handler for {handle.info_hash()}")
-        self._handle = handle
-        self._resume_service = resume_service
+        self._session = session
+        self._alert_driver = alert_driver
+        self._states: MutableMapping[
+            lt.torrent_handle, _State
+        ] = weakref.WeakValueDictionary()
+        self._closed = False
+        self._task: Optional[asyncio.Future] = None
 
-        self._state = _State(handle)
-        # The proper place for this is after iterator creation, so we don't
-        # miss a metadata_received_alert, but this would block alert
-        # processing. We could always get it from save_resume_data_alert, but
-        # this adds extra alert processing. So we do *both*: get torrent_info
-        # now for efficiency in the common case, and fire save_resume_data for
-        # correctness.
-        # DOES block
-        ti = handle.torrent_file()
-        if ti is not None:
-            self._state.set_ti(ti)
-        self._iterator = alert_driver.iter_alerts(
+    def read_pieces(
+        self, handle: lt.torrent_handle, pieces: Sequence[int]
+    ) -> AsyncGenerator[bytes, None]:
+        assert not self._closed
+        state = self._states.get(handle)
+        if not state:
+            state = _State(handle, self._session)
+            self._states[handle] = state
+        return state.read_pieces(pieces)
+
+    def start(self) -> None:
+        assert self._task is None
+        self._task = asyncio.create_task(self._run())
+
+    def close(self) -> None:
+        assert self._task is not None
+        self._task.cancel()
+        self._closed = True
+        for state in self._states.values():
+            state.set_exception(asyncio.CancelledError())
+
+    async def wait_closed(self) -> None:
+        assert self._closed
+        assert self._task is not None
+        with contextlib.suppress(asyncio.CancelledError):
+            await self._task
+
+    async def _run(self) -> None:
+        with self._alert_driver.iter_alerts(
             lt.alert_category.status,
             lt.read_piece_alert,
             lt.torrent_removed_alert,
-            lt.save_resume_data_alert,
             lt.torrent_error_alert,
-            lt.metadata_received_alert,
-            handle=handle,
-        )
+        ) as iterator:
+            # Do this here to ensure we capture alerts for any jobs started
+            # before we created our iterator
+            # Separate function to avoid references
+            self._prioritize_all()
+            async for alert in iterator:
+                # Separate function to avoid references
+                self._handle_alert(cast(lt.torrent_alert, alert))
 
-    def add(self, *requests: Request) -> bool:
-        with self._lock:
-            if self._terminated.is_set():
-                return False
-            self._state.add(*requests)
-            self._state.update_priorities()
-            return True
+    def _prioritize_all(self) -> None:
+        for state in self._states.values():
+            state.prioritize()
 
-    def discard(self, *requests: Request) -> None:
-        with self._lock:
-            self._state.discard(
-                *requests,
-                exception=_mk_cancelederror(),
-            )
-            self._state.update_priorities()
-            if not self._state.has_requests():
-                self.terminate()
-
-    def _set_exception(self, exception: BaseException) -> None:
-        with self._lock:
-            super()._set_exception(exception)
-            self._state.set_exception(exception)
-            self._state.update_priorities()
-
-    def _terminate(self) -> None:
-        with self._lock:
-            self._iterator.close()
-            # Normal termination still terminates requests (but doesn't count
-            # as the task canceling abnormally)
-            if self._state.get_exception() is None:
-                self._state.set_exception(_mk_cancelederror())
-                self._state.update_priorities()
-
-    def _handle_alert_locked(self, alert: lt.alert) -> None:
-        if isinstance(alert, lt.read_piece_alert):
-            exc = ltpy.exception_from_error_code(alert.error)
-            self._state.on_read_piece(alert.piece, alert.buffer, exc)
-        elif isinstance(alert, lt.torrent_removed_alert):
-            raise ltpy.InvalidTorrentHandleError(
-                lt.error_code(
-                    ltpy.LibtorrentErrorValue.INVALID_TORRENT_HANDLE,
-                    lt.libtorrent_category(),
-                )
-            )
-        elif isinstance(alert, lt.save_resume_data_alert):
-            if alert.params.ti is not None:
-                self._state.set_ti(alert.params.ti)
-                self._state.update_priorities()
-        elif isinstance(alert, lt.torrent_error_alert):
-            # These are mostly disk errors
-            exc = ltpy.exception_from_error_code(alert.error)
-            if exc is not None:
-                raise exc
-        elif isinstance(alert, lt.metadata_received_alert):
-            self._resume_service.save(
-                alert.handle, flags=lt.torrent_handle.save_info_dict
-            )
-
-    def _run(self) -> None:
-        with self._iterator:
-            with self._lock:
-                if self._terminated.is_set():
-                    return
-
-                with ltpy.translate_exceptions():
-                    # This will re-fire any error alerts
-                    # Does not block
-                    self._handle.clear_error()
-
-                self._state.update_priorities()
-
-                # See comment in constructor
-                if self._state.get_ti() is None:
-                    self._resume_service.save(
-                        self._handle, flags=lt.torrent_handle.save_info_dict
-                    )
-
-            for alert in self._iterator:
-                with self._lock:
-                    if self._terminated.is_set():
-                        return
-                    self._handle_alert_locked(alert)
-
-
-class RequestService(task_lib.Task):
-    def __init__(
-        self,
-        *,
-        alert_driver: driver_lib.AlertDriver,
-        resume_service: resume_lib.ResumeService,
-        pedantic=False,
-    ):
-        super().__init__(title="RequestService", thread_name="request")
-        self._alert_driver = alert_driver
-        self._resume_service = resume_service
-        self._pedantic = pedantic
-
-        self._lock = threading.RLock()
-        # As of 3.8, WeakValueDictionary is unsubscriptable
-        self._tasks = (
-            WeakValueDictionary()
-        )  # type: WeakValueDictionary[lt.torrent_handle, _Task]
-
-    def add_request(
-        self,
-        *,
-        handle: lt.torrent_handle,
-        start: int,
-        stop: int,
-        mode: Mode,
-    ) -> Request:
-        request = Request(
-            handle=handle,
-            start=start,
-            stop=stop,
-            mode=mode,
-        )
-
-        with self._lock:
-            if self._terminated.is_set():
-                request.set_exception(_mk_cancelederror())
-                return request
-
-            task = self._tasks.get(handle)
-            while True:
-                if task is not None and task.add(request):
-                    break
-                task = _Task(
-                    handle=handle,
-                    alert_driver=self._alert_driver,
-                    resume_service=self._resume_service,
-                )
-                self._tasks[handle] = task
-                self._add_child(task, terminate_me_on_error=self._pedantic)
-
-        return request
-
-    def discard_request(self, request: Request) -> None:
-        with self._lock:
-            task = self._tasks.get(request.handle)
-            if task is None:
-                return
-            task.discard(request)
-
-    def _terminate(self) -> None:
-        pass
-
-    def _run(self) -> None:
-        self._terminated.wait()
-        self._log_terminate()
+    def _handle_alert(self, alert: lt.torrent_alert) -> None:
+        state = self._states.get(alert.handle)
+        if state:
+            state.handle_alert(alert)

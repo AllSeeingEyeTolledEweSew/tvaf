@@ -13,24 +13,22 @@
 
 import contextlib
 import logging
-import threading
 from typing import Any
+from typing import AsyncIterator
 from typing import Collection
 from typing import Dict
 from typing import Iterator
 
 import libtorrent as lt
 
-from tvaf import config as config_lib
-from tvaf import ltpy
+from . import config as config_lib
+from . import ltpy
 
 _LOG = logging.getLogger()
 
 _OVERRIDES = {
     "announce_ip": "",
     "handshake_client_version": "",
-    "enable_lsd": False,
-    "enable_dht": False,
     "alert_queue_size": 2 ** 31 - 1,
 }
 
@@ -119,9 +117,8 @@ class SessionService(config_lib.HasConfig):
     def __init__(
         self, *, alert_mask: int = 0, config: config_lib.Config = None
     ):
-        self._lock = threading.RLock()
         self._alert_mask_bit_count: Dict[int, int] = {}
-        self._inc_alert_mask_bits_locked(alert_mask)
+        self._inc_alert_mask_bits(alert_mask)
         if config is None:
             config = config_lib.Config()
 
@@ -129,45 +126,43 @@ class SessionService(config_lib.HasConfig):
             self._settings = parse_config(config)
             self._config_alert_mask: int = self._settings["alert_mask"]
             self._settings["alert_mask"] |= alert_mask
-            self._inc_alert_mask_bits_locked(self._config_alert_mask)
+            self._inc_alert_mask_bits(self._config_alert_mask)
             self.session = lt.session(self._settings)
 
-    def _inc_alert_mask_bits_locked(self, alert_mask: int) -> None:
+    def _inc_alert_mask_bits(self, alert_mask: int) -> None:
         for bit in _get_mask_bits(alert_mask):
             self._alert_mask_bit_count[bit] = (
                 self._alert_mask_bit_count.get(bit, 0) + 1
             )
 
-    def _dec_alert_mask_bits_locked(self, alert_mask: int) -> None:
+    def _dec_alert_mask_bits(self, alert_mask: int) -> None:
         for bit in _get_mask_bits(alert_mask):
             self._alert_mask_bit_count[bit] -= 1
             if self._alert_mask_bit_count[bit] == 0:
                 self._alert_mask_bit_count.pop(bit)
 
     def inc_alert_mask(self, alert_mask: int) -> None:
-        with self._lock:
-            self._inc_alert_mask_bits_locked(alert_mask)
-            # Can't fail to update alert mask (?)
-            self._update_alert_mask_locked()
+        self._inc_alert_mask_bits(alert_mask)
+        # Can't fail to update alert mask (?)
+        self._update_alert_mask()
 
     def dec_alert_mask(self, alert_mask: int) -> None:
-        with self._lock:
-            self._dec_alert_mask_bits_locked(alert_mask)
-            # Can't fail to update alert mask (?)
-            self._update_alert_mask_locked()
+        self._dec_alert_mask_bits(alert_mask)
+        # Can't fail to update alert mask (?)
+        self._update_alert_mask()
 
-    def _update_alert_mask_locked(self) -> None:
-        alert_mask = self._get_alert_mask_locked()
-        self._apply_settings_locked({"alert_mask": alert_mask})
+    def _update_alert_mask(self) -> None:
+        alert_mask = self._get_alert_mask()
+        self._apply_settings({"alert_mask": alert_mask})
         self._settings["alert_mask"] = alert_mask
 
-    def _get_alert_mask_locked(self) -> int:
+    def _get_alert_mask(self) -> int:
         alert_mask = 0
         for bit in self._alert_mask_bit_count:
             alert_mask |= 1 << bit
         return alert_mask
 
-    def _apply_settings_locked(self, settings: Dict[str, Any]) -> None:
+    def _apply_settings(self, settings: Dict[str, Any]) -> None:
         deltas = dict(set(settings.items()) - set(self._settings.items()))
         if not deltas:
             return
@@ -185,16 +180,17 @@ class SessionService(config_lib.HasConfig):
         # As far as I can tell, apply_settings never partially fails
         self.session.apply_settings(deltas)
 
-    @contextlib.contextmanager
-    def stage_config(self, config: config_lib.Config) -> Iterator[None]:
+    @contextlib.asynccontextmanager
+    async def stage_config(
+        self, config: config_lib.Config
+    ) -> AsyncIterator[None]:
         settings = parse_config(config)
 
-        with self._lock:
-            yield
-            config_alert_mask: int = settings["alert_mask"]
-            self._dec_alert_mask_bits_locked(self._config_alert_mask)
-            self._inc_alert_mask_bits_locked(config_alert_mask)
-            settings["alert_mask"] = self._get_alert_mask_locked()
-            self._apply_settings_locked(settings)
-            self._settings = settings
-            self._config_alert_mask = config_alert_mask
+        yield
+        config_alert_mask: int = settings["alert_mask"]
+        self._dec_alert_mask_bits(self._config_alert_mask)
+        self._inc_alert_mask_bits(config_alert_mask)
+        settings["alert_mask"] = self._get_alert_mask()
+        self._apply_settings(settings)
+        self._settings = settings
+        self._config_alert_mask = config_alert_mask

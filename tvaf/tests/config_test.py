@@ -11,10 +11,11 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+import asyncio
 import contextlib
 import pathlib
 import tempfile
-from typing import Iterator
+from typing import AsyncIterator
 import unittest
 
 from tvaf import config as config_lib
@@ -33,7 +34,7 @@ class TestReadWrite(unittest.TestCase):
             '{"text_field": "value", ' '"numeric_field": 123}'
         )
 
-        config = config_lib.Config.from_disk(self.path)
+        config = asyncio.run(config_lib.Config.from_disk(self.path))
 
         self.assertEqual(
             config, config_lib.Config(text_field="value", numeric_field=123)
@@ -43,11 +44,11 @@ class TestReadWrite(unittest.TestCase):
         self.path.write_text("invalid json")
 
         with self.assertRaises(config_lib.InvalidConfigError):
-            config_lib.Config.from_disk(self.path)
+            asyncio.run(config_lib.Config.from_disk(self.path))
 
     def test_write(self) -> None:
         config = config_lib.Config(text_field="value", numeric_field=123)
-        config.write_to_disk(self.path)
+        asyncio.run(config.write_to_disk(self.path))
 
         config_text = self.path.read_text()
 
@@ -147,8 +148,10 @@ class Receiver:
     def __init__(self):
         self.config = config_lib.Config()
 
-    @contextlib.contextmanager
-    def stage_config(self, config: config_lib.Config) -> Iterator[None]:
+    @contextlib.asynccontextmanager
+    async def stage_config(
+        self, config: config_lib.Config
+    ) -> AsyncIterator[None]:
         yield
         self.config = config
 
@@ -166,13 +169,15 @@ class FailReceiver:
     def __init__(self):
         self.config = config_lib.Config()
 
-    @contextlib.contextmanager
-    def stage_config(self, _config: config_lib.Config) -> Iterator[None]:
+    @contextlib.asynccontextmanager
+    async def stage_config(
+        self, _config: config_lib.Config
+    ) -> AsyncIterator[None]:
         _raise_dummy()
         yield
 
 
-class TestSetConfig(unittest.TestCase):
+class TestStageConfig(unittest.TestCase):
     def test_fail(self) -> None:
         config = config_lib.Config(new=True)
 
@@ -180,20 +185,27 @@ class TestSetConfig(unittest.TestCase):
         fail_receiver = FailReceiver()
 
         # fail_receiver should cause an exception to be raised
-        with self.assertRaises(DummyException):
-            config_lib.set_config(
+        async def stage_good_fail() -> None:
+            async with config_lib.stage_config(
                 config, good_receiver.stage_config, fail_receiver.stage_config
-            )
+            ):
+                pass
+
+        with self.assertRaises(DummyException):
+            asyncio.run(stage_good_fail())
 
         # fail_receiver should prevent good_receiver from updating
         self.assertEqual(good_receiver.config, config_lib.Config())
 
         # Order should be independent
+        async def stage_fail_good() -> None:
+            async with config_lib.stage_config(
+                config, fail_receiver.stage_config, good_receiver.stage_config
+            ):
+                pass
 
         with self.assertRaises(DummyException):
-            config_lib.set_config(
-                config, fail_receiver.stage_config, good_receiver.stage_config
-            )
+            asyncio.run(stage_fail_good())
 
         self.assertEqual(good_receiver.config, config_lib.Config())
 
@@ -203,9 +215,13 @@ class TestSetConfig(unittest.TestCase):
         receiver1 = Receiver()
         receiver2 = Receiver()
 
-        config_lib.set_config(
-            config, receiver1.stage_config, receiver2.stage_config
-        )
+        async def stage_1_2() -> None:
+            async with config_lib.stage_config(
+                config, receiver1.stage_config, receiver2.stage_config
+            ):
+                pass
+
+        asyncio.run(stage_1_2())
 
         self.assertEqual(receiver1.config, config)
         self.assertEqual(receiver2.config, config)

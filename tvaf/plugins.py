@@ -20,7 +20,7 @@ from typing import Iterable
 from typing import List
 from typing import Tuple
 
-from tvaf import lifecycle
+from . import lifecycle
 
 if sys.version_info >= (3, 8):
     import importlib.metadata as importlib_metadata
@@ -46,7 +46,6 @@ def _select_eps_group(
         )
 
 
-@lifecycle.lru_cache()
 def get_entry_points(group_name: str) -> Iterable[Any]:
     name_to_entry_points = collections.defaultdict(list)
     for entry_point in _select_eps_group(group_name):
@@ -57,19 +56,6 @@ def get_entry_points(group_name: str) -> Iterable[Any]:
     return entry_points
 
 
-@lifecycle.lru_cache()
+@lifecycle.lru_cache(maxsize=256)
 def load_entry_points(group_name: str) -> Iterable[Any]:
     return [entry.load() for entry in get_entry_points(group_name)]
-
-
-class Pass(Exception):
-    pass
-
-
-def call_first(group_name: str, *args: Any, **kwargs: Any) -> Any:
-    for plugin in load_entry_points(group_name):
-        try:
-            return plugin(*args, **kwargs)
-        except Pass:
-            pass
-    raise Pass()

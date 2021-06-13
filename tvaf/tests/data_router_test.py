@@ -13,140 +13,166 @@
 import os
 import pathlib
 import tempfile
-import unittest
 
-import fastapi.testclient
-import libtorrent as lt
+import asgi_lifespan
+import httpx
+from later.unittest.backport import async_case
 
 from tvaf import app as app_lib
+from tvaf import concurrency
 from tvaf import services
 
 from . import lib
-from . import request_test_utils
 from . import tdummy
 
 
-class AppTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.client = fastapi.testclient.TestClient(app_lib.APP)
-        self.tempdir = tempfile.TemporaryDirectory()
-        self.cwd = pathlib.Path.cwd()
-        os.chdir(self.tempdir.name)
-        services.startup()
+class AppTest(async_case.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.tempdir = await concurrency.to_thread(tempfile.TemporaryDirectory)
+        self.cwd = await concurrency.to_thread(pathlib.Path.cwd)
+        await concurrency.to_thread(os.chdir, self.tempdir.name)
+        self.config = lib.create_isolated_config()
+        await self.config.write_to_disk(services.CONFIG_PATH)
+        self.lifespan_manager = asgi_lifespan.LifespanManager(
+            app_lib.APP, startup_timeout=None, shutdown_timeout=None
+        )
+        await self.lifespan_manager.__aenter__()
+        self.client = httpx.AsyncClient(
+            app=app_lib.APP, base_url="http://test"
+        )
 
-    def tearDown(self) -> None:
-        os.chdir(self.cwd)
-        services.shutdown()
+    async def asyncTearDown(self) -> None:
+        await self.client.aclose()
+        await self.lifespan_manager.__aexit__(None, None, None)
+        await concurrency.to_thread(os.chdir, self.cwd)
+        await concurrency.to_thread(self.tempdir.cleanup)
 
 
 class FormatTest(AppTest, lib.TestCase):
-    def test_invalid_multihash(self) -> None:
+    async def test_invalid_multihash(self) -> None:
         # not a valid multihash
-        r = self.client.get("/v1/btmh/ffff/i/0")
+        r = await self.client.get("/v1/btmh/ffff/i/0")
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="invalid_multihash.json")
 
         # inconsistent sha1 length
-        r = self.client.get("/v1/btmh/1114a0/i/0")
+        r = await self.client.get("/v1/btmh/1114a0/i/0")
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="short_sha1.json")
 
         # wrong sha1 length (110100) -- should this be 422?
 
         # odd-numbered hex digits
-        r = self.client.get("/v1/btmh/a/i/0")
+        r = await self.client.get("/v1/btmh/a/i/0")
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="odd_hex_digits.json")
 
         # not hexadecimal
-        r = self.client.get("/v1/btmh/not-hexadecimal/i/0")
+        r = await self.client.get("/v1/btmh/not-hexadecimal/i/0")
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="not_hexadecimal.json")
 
         # not sha1
-        r = self.client.get("/v1/btmh/1201cd/i/0")
+        r = await self.client.get("/v1/btmh/1201cd/i/0")
         self.assertEqual(r.status_code, 404)
         self.assert_golden_json(r.json(), suffix="not_sha1.json")
 
-    def test_invalid_file_index(self) -> None:
-        r = self.client.get(
+    async def test_invalid_file_index(self) -> None:
+        r = await self.client.get(
             "/v1/btmh/1114aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/i/-1"
         )
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="negative_index.json")
 
-        r = self.client.get(
+        r = await self.client.get(
             "/v1/btmh/1114aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/i/a"
         )
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="bad_index.json")
 
-    def test_unknown_torrent(self) -> None:
-        r = self.client.get(
-            "/v1/btmh/1114aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/i/0"
-        )
-        self.assertEqual(r.status_code, 404)
-        self.assert_golden_json(r.json())
 
-
-class DataTest(AppTest, lib.TestCase):
-    def setUp(self) -> None:
-        super().setUp()
-
+class AlreadyDownloadedTest(AppTest, lib.TestCase):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
         self.torrent = tdummy.DEFAULT
-        self.torrent.entry_point_faker.enable()
 
-    def tearDown(self) -> None:
-        super().tearDown()
-        self.torrent.entry_point_faker.disable()
-
-    def test_head_request(self) -> None:
-        # HEAD request should work
-        r = self.client.head(f"/v1/btmh/{self.torrent.btmh}/i/0")
-        self.assertTrue(r.ok)
-        self.assert_golden_json(dict(r.headers), suffix="headers.json")
-
-        # torrent shouldn't be in the session
-        handle = services.get_session().find_torrent(self.torrent.sha1_hash)
-        self.assertFalse(handle.is_valid())
-
-    def test_already_downloaded(self) -> None:
         atp = self.torrent.atp()
-        atp.flags &= ~lt.torrent_flags.paused
-        handle = services.get_session().add_torrent(atp)
+        atp.save_path = self.tempdir.name
+        session = await services.get_session()
+        handle = await concurrency.to_thread(session.add_torrent, atp)
         # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
         # checking silently fails in libtorrent 1.2.8.
-        request_test_utils.wait_done_checking_or_error(handle)
+        await lib.wait_done_checking_or_error(handle)
         for i, piece in enumerate(self.torrent.pieces):
             # NB: bug in libtorrent where add_piece accepts str but not bytes
             handle.add_piece(i, piece.decode(), 0)
 
-        r = self.client.get(f"/v1/btmh/{self.torrent.btmh}/i/0")
-        self.assertTrue(r.ok)
+    async def test_head(self) -> None:
+        r = await self.client.head(f"/v1/btmh/{self.torrent.btmh}/i/0")
+        self.assertEqual(r.status_code, 200)
+        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+        self.assertEqual(
+            r.headers["content-length"], str(self.torrent.files[0].length)
+        )
+
+    async def test_get(self) -> None:
+        r = await self.client.get(f"/v1/btmh/{self.torrent.btmh}/i/0")
+        self.assertEqual(r.status_code, 200)
+        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+        self.assertEqual(
+            r.headers["content-length"], str(self.torrent.files[0].length)
+        )
         self.assertEqual(r.content, self.torrent.files[0].data)
-        self.assert_golden_json(dict(r.headers), suffix="headers.json")
 
-    def test_download_from_seed(self) -> None:
-        seed = lib.create_isolated_session_service().session
-        seed_dir = tempfile.TemporaryDirectory()
+
+class SeedTest(AppTest):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.torrent = tdummy.DEFAULT
+
+        self.seed = lib.create_isolated_session_service().session
+        self.seed_dir = await concurrency.to_thread(
+            tempfile.TemporaryDirectory
+        )
         atp = self.torrent.atp()
-        atp.save_path = seed_dir.name
-        atp.flags &= ~lt.torrent_flags.paused
-        handle = seed.add_torrent(atp)
+        atp.save_path = self.seed_dir.name
+        handle = await concurrency.to_thread(self.seed.add_torrent, atp)
         # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
         # checking silently fails in libtorrent 1.2.8.
-        request_test_utils.wait_done_checking_or_error(handle)
+        await lib.wait_done_checking_or_error(handle)
         for i, piece in enumerate(self.torrent.pieces):
             # NB: bug in libtorrent where add_piece accepts str but not bytes
             handle.add_piece(i, piece.decode(), 0)
+        self.seed_endpoint = ("127.0.0.1", self.seed.listen_port())
+        self.seed_endpoint_str = f"127.0.0.1:{self.seed.listen_port()}"
 
-        def add_seed_peer(atp: lt.add_torrent_params) -> None:
-            atp.peers = [("127.0.0.1", seed.listen_port())]
+    async def asyncTearDown(self) -> None:
+        await super().asyncTearDown()
+        await concurrency.to_thread(self.seed_dir.cleanup)
 
-        with lib.EntryPointFaker() as faker:
-            faker.add("_test", add_seed_peer, "tvaf.services.configure_atp")
 
-            r = self.client.get(f"/v1/btmh/{self.torrent.btmh}/i/0")
-            self.assertTrue(r.ok)
-            self.assertEqual(r.content, self.torrent.files[0].data)
-            self.assert_golden_json(dict(r.headers), suffix="headers.json")
+class PublicFallbackTest(SeedTest, lib.TestCase):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.seed.apply_settings({"enable_dht": True})
+        config = await services.get_config()
+        config["session_dht_bootstrap_nodes"] = self.seed_endpoint_str
+        config["session_enable_dht"] = True
+        await services.set_config(config)
+
+    async def test_head(self) -> None:
+        r = await self.client.head(f"/v1/btmh/{self.torrent.btmh}/i/0")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-length"], str(self.torrent.files[0].length)
+        )
+        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+
+    async def test_get(self) -> None:
+        r = await self.client.get(f"/v1/btmh/{self.torrent.btmh}/i/0")
+        self.assertEqual(r.status_code, 200)
+        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+        self.assertEqual(
+            r.headers["content-length"], str(self.torrent.files[0].length)
+        )
+        self.assertEqual(r.content, self.torrent.files[0].data)
