@@ -11,7 +11,6 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-import abc
 import contextlib
 import json
 import os
@@ -120,17 +119,6 @@ class Config(dict, MutableMapping[str, Any]):
 
 
 _C = TypeVar("_C", bound=Config)
-
-
-class HasConfig(abc.ABC):
-    @abc.abstractmethod
-    @contextlib.asynccontextmanager
-    async def stage_config(self, config: Config) -> AsyncIterator[None]:
-        yield
-
-    async def set_config(self, config: Config) -> None:
-        async with self.stage_config(config):
-            pass
 
 
 @contextlib.asynccontextmanager

@@ -11,9 +11,8 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-import asyncio
-import unittest
 
+from later.unittest.backport import async_case
 import libtorrent as lt
 
 from tvaf import config as config_lib
@@ -31,8 +30,8 @@ def _raise_dummy() -> None:
     raise DummyException()
 
 
-class TestSession(unittest.TestCase):
-    def test_session(self) -> None:
+class TestSession(async_case.IsolatedAsyncioTestCase):
+    async def test_session(self) -> None:
         init_alert_mask = lt.alert_category.error | lt.alert_category.peer
         config = lib.create_isolated_config()
         config["session_handshake_client_version"] = "test-version"
@@ -44,7 +43,7 @@ class TestSession(unittest.TestCase):
         session_service.session.get_settings()
         self.assertEqual(config["session_settings_base"], "default_settings")
 
-    def test_alert_mask(self) -> None:
+    async def test_alert_mask(self) -> None:
         config = lib.create_isolated_config()
         config["session_alert_mask"] = 2
 
@@ -63,13 +62,15 @@ class TestSession(unittest.TestCase):
 
         # Test we can unset alert mask via config
         config["session_alert_mask"] = 0
-        asyncio.run(session_service.set_config(config))
+        async with session_service.stage_config(config):
+            pass
         settings = session_service.session.get_settings()
         self.assertEqual(settings["alert_mask"], 1 | 8)
 
         # Test we can change alert mask via config
         config["session_alert_mask"] = 4
-        asyncio.run(session_service.set_config(config))
+        async with session_service.stage_config(config):
+            pass
         settings = session_service.session.get_settings()
         self.assertEqual(settings["alert_mask"], 1 | 4 | 8)
 
@@ -78,7 +79,7 @@ class TestSession(unittest.TestCase):
         settings = session_service.session.get_settings()
         self.assertEqual(settings["alert_mask"], 1 | 4)
 
-    def test_overrides(self) -> None:
+    async def test_overrides(self) -> None:
         config = lib.create_isolated_config()
         config["session_handshake_client_version"] = "test-version"
         session_service = session_lib.SessionService(config=config)
@@ -87,7 +88,7 @@ class TestSession(unittest.TestCase):
         settings = session_service.session.get_settings()
         self.assertEqual(settings["handshake_client_version"], "")
 
-    def test_blacklist(self) -> None:
+    async def test_blacklist(self) -> None:
         config = lib.create_isolated_config()
         config["session_user_agent"] = "test"
         session_service = session_lib.SessionService(config=config)
@@ -96,7 +97,7 @@ class TestSession(unittest.TestCase):
         settings = session_service.session.get_settings()
         self.assertNotEqual(settings["user_agent"], "test")
 
-    def test_reconfigure(self) -> None:
+    async def test_reconfigure(self) -> None:
         config = lib.create_isolated_config()
         session_service = session_lib.SessionService(config=config)
 
@@ -106,17 +107,19 @@ class TestSession(unittest.TestCase):
 
         # Change config
         config["session_close_redundant_connections"] = False
-        asyncio.run(session_service.set_config(config))
+        async with session_service.stage_config(config):
+            pass
 
         settings = session_service.session.get_settings()
         self.assertEqual(settings["close_redundant_connections"], False)
 
         # Test we can set_config with no changes
-        asyncio.run(session_service.set_config(config))
+        async with session_service.stage_config(config):
+            pass
         settings = session_service.session.get_settings()
         self.assertEqual(settings["close_redundant_connections"], False)
 
-    def test_stage_revert(self) -> None:
+    async def test_stage_revert(self) -> None:
         config = lib.create_isolated_config()
         session_service = session_lib.SessionService(config=config)
 
@@ -127,12 +130,12 @@ class TestSession(unittest.TestCase):
                 _raise_dummy()
 
         with self.assertRaises(DummyException):
-            asyncio.run(stage_and_fail())
+            await stage_and_fail()
 
         settings = session_service.session.get_settings()
         self.assertEqual(settings["close_redundant_connections"], True)
 
-    def test_settings_base(self) -> None:
+    async def test_settings_base(self) -> None:
         config = lib.create_isolated_config()
         config["session_settings_base"] = "high_performance_seed"
         session_service = session_lib.SessionService(config=config)
@@ -149,19 +152,19 @@ class TestSession(unittest.TestCase):
             config["session_settings_base"], "high_performance_seed"
         )
 
-    def test_settings_base_invalid(self) -> None:
+    async def test_settings_base_invalid(self) -> None:
         with self.assertRaises(config_lib.InvalidConfigError):
             session_lib.SessionService(
                 config=config_lib.Config(session_settings_base="invalid")
             )
 
-    def test_setting_invalid_type(self) -> None:
+    async def test_setting_invalid_type(self) -> None:
         with self.assertRaises(config_lib.InvalidConfigError):
             session_lib.SessionService(
                 config=config_lib.Config(session_cache_size="invalid")
             )
 
-    def test_alert_mask_invalid_type(self) -> None:
+    async def test_alert_mask_invalid_type(self) -> None:
         with self.assertRaises(config_lib.InvalidConfigError):
             session_lib.SessionService(
                 config=config_lib.Config(session_alert_mask="invalid")

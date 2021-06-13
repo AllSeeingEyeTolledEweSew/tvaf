@@ -113,7 +113,7 @@ _init_alert_mask_name()
 del _init_alert_mask_name
 
 
-class SessionService(config_lib.HasConfig):
+class SessionService:
     def __init__(
         self, *, alert_mask: int = 0, config: config_lib.Config = None
     ):
