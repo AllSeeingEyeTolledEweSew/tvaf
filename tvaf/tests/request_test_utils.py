@@ -56,14 +56,12 @@ class RequestServiceTestCase(async_case.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.alert_driver.wait_closed(), 5)
         await concurrency.to_thread(self.tempdir.cleanup)
 
-    async def feed_pieces(self, piece_indexes=None) -> None:
-        if not piece_indexes:
-            piece_indexes = list(range(len(self.torrent.pieces)))
+    async def feed_pieces(self) -> None:
+        piece_indexes = list(range(len(self.torrent.pieces)))
         # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
         # checking silently fails in libtorrent 1.2.8.
         await asyncio.wait_for(lib.wait_done_checking_or_error(self.handle), 5)
         if (await concurrency.to_thread(self.handle.status)).errc.value() != 0:
             return
         for i in piece_indexes:
-            # NB: bug in libtorrent where add_piece accepts str but not bytes
-            self.handle.add_piece(i, self.torrent.pieces[i].decode(), 0)
+            self.handle.add_piece(i, self.torrent.pieces[i], 0)

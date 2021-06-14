@@ -39,6 +39,7 @@ repos:
         - pydantic>=1.8
         - starlette>=0.12.0
         - httpx>=0.18.0,<0.19
+        - python-libtorrent>=2.0.4
     - id: mypy
       name: mypy38
       language_version: python3.8
@@ -48,6 +49,7 @@ repos:
         - pydantic>=1.8
         - starlette>=0.12.0
         - httpx>=0.18.0,<0.19
+        - python-libtorrent>=2.0.4
     - id: mypy
       name: mypy39
       language_version: python3.9
@@ -57,6 +59,7 @@ repos:
         - pydantic>=1.8
         - starlette>=0.12.0
         - httpx>=0.18.0,<0.19
+        - python-libtorrent>=2.0.4
 - repo: https://gitlab.com/pycqa/flake8.git
   rev: 3.9.0
   hooks:

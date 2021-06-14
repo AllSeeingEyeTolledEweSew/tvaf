@@ -130,9 +130,7 @@ class TestReadPieces(request_test_utils.RequestServiceTestCase):
             # while checking silently fails in libtorrent 1.2.8.
             await lib.wait_done_checking_or_error(seed_handle)
             for i, piece in enumerate(self.torrent.pieces):
-                # NB: bug in libtorrent where add_piece accepts str but not
-                # bytes
-                seed_handle.add_piece(i, piece.decode(), 0)
+                seed_handle.add_piece(i, piece, 0)
 
             self.handle.connect_peer(("127.0.0.1", seed.listen_port()))
 

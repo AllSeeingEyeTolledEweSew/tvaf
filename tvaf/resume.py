@@ -286,7 +286,7 @@ class ResumeService:
                     ti.info_hash(),
                     self._maybe_write,
                     handle,
-                    info_section=ti.info_section(),  # type: ignore
+                    info_section=ti.info_section(),
                 )
 
             asyncio.create_task(save_torrent_file())
@@ -323,7 +323,7 @@ class ResumeService:
         info_section: Optional[bytes] = None
         if atp.ti is not None:
             with ltpy.translate_exceptions():
-                info_section = atp.ti.info_section()  # type: ignore
+                info_section = atp.ti.info_section()
 
         # NB: The add_torrent_params object is managed with alert memory. We
         # must do write_resume_data() before the next pop_alerts()

@@ -266,12 +266,12 @@ class AlertDriver:
 
         asyncio.get_event_loop().add_reader(self._rfile, notify)
         # This *does* fire immediately, if there are pending alerts
-        self._session.set_alert_fd(self._wfile.fileno())  # type: ignore
+        self._session.set_alert_fd(self._wfile.fileno())
 
     def close(self) -> None:
         for it in self._all_iters():
             it.set_exception(asyncio.CancelledError())
-        self._session.set_alert_fd(-1)  # type: ignore
+        self._session.set_alert_fd(-1)
         asyncio.get_event_loop().remove_reader(self._rfile)
         self._rfile.close()
         self._wfile.close()

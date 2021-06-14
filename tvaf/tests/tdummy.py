@@ -96,9 +96,8 @@ class File:
         if b"p" in self.attr:
             return b"\x00" * self.length
         if self._data is None:
-            # 7-bit data to make it easy to work around libtorrent bug #4612
             self._data = bytes(
-                random.getrandbits(7) for _ in range(self.length)
+                random.getrandbits(8) for _ in range(self.length)
             )
         return self._data
 

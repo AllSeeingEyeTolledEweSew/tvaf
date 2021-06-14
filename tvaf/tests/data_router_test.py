@@ -104,8 +104,7 @@ class AlreadyDownloadedTest(AppTest, lib.TestCase):
         # checking silently fails in libtorrent 1.2.8.
         await lib.wait_done_checking_or_error(handle)
         for i, piece in enumerate(self.torrent.pieces):
-            # NB: bug in libtorrent where add_piece accepts str but not bytes
-            handle.add_piece(i, piece.decode(), 0)
+            handle.add_piece(i, piece, 0)
 
     async def test_head(self) -> None:
         r = await self.client.head(f"/v1/btmh/{self.torrent.btmh}/i/0")
@@ -141,8 +140,7 @@ class SeedTest(AppTest):
         # checking silently fails in libtorrent 1.2.8.
         await lib.wait_done_checking_or_error(handle)
         for i, piece in enumerate(self.torrent.pieces):
-            # NB: bug in libtorrent where add_piece accepts str but not bytes
-            handle.add_piece(i, piece.decode(), 0)
+            handle.add_piece(i, piece, 0)
         self.seed_endpoint = ("127.0.0.1", self.seed.listen_port())
         self.seed_endpoint_str = f"127.0.0.1:{self.seed.listen_port()}"
 

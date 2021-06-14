@@ -183,8 +183,7 @@ class TerminateTest(async_case.IsolatedAsyncioTestCase):
         atp.save_path = self.tempdir.name
         handle = self.session.add_torrent(atp)
         await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 5)
-        # NB: bug in libtorrent where add_piece accepts str but not bytes
-        handle.add_piece(0, self.torrent.pieces[0].decode(), 0)
+        handle.add_piece(0, self.torrent.pieces[0], 0)
 
         for _ in lib.loop_until_timeout(5, msg="piece finish"):
             status = handle.status(flags=lt.torrent_handle.query_pieces)
@@ -219,8 +218,7 @@ class TerminateTest(async_case.IsolatedAsyncioTestCase):
         handle = self.session.add_torrent(atp)
         await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 5)
         for i, piece in enumerate(self.torrent.pieces):
-            # NB: bug in libtorrent where add_piece accepts str but not bytes
-            handle.add_piece(i, piece.decode(), 0)
+            handle.add_piece(i, piece, 0)
 
         for _ in lib.loop_until_timeout(5, msg="finished state"):
             status = handle.status()
@@ -271,8 +269,7 @@ class TerminateTest(async_case.IsolatedAsyncioTestCase):
         handle = self.session.add_torrent(atp)
         await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 5)
         for i, piece in enumerate(self.torrent.pieces):
-            # NB: bug in libtorrent where add_piece accepts str but not bytes
-            handle.add_piece(i, piece.decode(), 0)
+            handle.add_piece(i, piece, 0)
 
         for _ in lib.loop_until_timeout(5, msg="finished state"):
             status = handle.status()
