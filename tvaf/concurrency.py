@@ -64,19 +64,16 @@ async def iter_in_thread(
             yield obj
 
 
-async def wait_error(job: "asyncio.Future[_T]", error: asyncio.Future) -> _T:
-    await asyncio.wait((job, error), return_when=asyncio.FIRST_COMPLETED)
-    if error.done():
-        error.result()  # should raise
-    assert job.done()
-    return job.result()
-
-
 async def wait_first(aws: Iterable[_FutureT]) -> None:
-    tasks = [asyncio.create_task(aw) for aw in aws]
-    (done, pending) = await asyncio.wait(
-        tasks, return_when=asyncio.FIRST_COMPLETED
-    )
+    tasks = [asyncio.ensure_future(aw) for aw in aws]
+    try:
+        (done, pending) = await asyncio.wait(
+            tasks, return_when=asyncio.FIRST_COMPLETED
+        )
+    except asyncio.CancelledError:
+        for task in tasks:
+            task.cancel()
+        raise
     for task in pending:
         task.cancel()
     for task in done:

@@ -110,9 +110,10 @@ class _Iterator:
 
     async def iterator(self) -> AsyncGenerator[lt.alert, None]:
         while True:
-            alerts = await concurrency.wait_error(
-                asyncio.shield(self._alerts), self._exc
+            await concurrency.wait_first(
+                (asyncio.shield(self._alerts), asyncio.shield(self._exc))
             )
+            alerts = self._alerts.result()
             for alert in alerts:
                 yield alert
             self.maybe_release()
