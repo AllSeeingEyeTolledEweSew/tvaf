@@ -21,7 +21,6 @@ from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
 from typing import cast
-from typing import Generator
 from typing import Generic
 from typing import Iterable
 from typing import Iterator
@@ -31,12 +30,10 @@ from typing import Optional
 from typing import overload
 from typing import Type
 from typing import TypeVar
-from typing import Union
 
 import cachetools.keys
 
 _T = TypeVar("_T")
-_FutureT = Union["asyncio.Future[_T]", Generator[Any, None, _T], Awaitable[_T]]
 
 
 async def to_thread(func: Callable[..., _T], *args: Any, **kwargs: Any) -> _T:
@@ -64,7 +61,7 @@ async def iter_in_thread(
             yield obj
 
 
-async def wait_first(aws: Iterable[_FutureT]) -> None:
+async def wait_first(aws: Iterable[Awaitable]) -> None:
     tasks = [asyncio.ensure_future(aw) for aw in aws]
     try:
         (done, pending) = await asyncio.wait(
