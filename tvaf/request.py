@@ -20,10 +20,10 @@ import logging
 from typing import AsyncGenerator
 from typing import cast
 from typing import Dict
-from typing import List
 from typing import MutableMapping
 from typing import Optional
 from typing import Sequence
+from typing import Set
 import weakref
 
 import libtorrent as lt
@@ -75,8 +75,7 @@ _LOG = logging.getLogger(__name__)
 
 
 class _State:
-
-    DEADLINE_INTERVAL = 1000
+    SEQ_BUFFER = 30
 
     def __init__(self, handle: lt.torrent_handle, session: lt.session):
         self._handle = handle
@@ -86,21 +85,18 @@ class _State:
             int, asyncio.Future[bytes]
         ] = collections.OrderedDict()
         self._readers: Dict[int, int] = {}
-        self._we_set_prios: Dict[int, int] = {}
+        self._prev_time_critical: Set[int] = set()
 
-    def _inc_read(self, pieces: Sequence[int]) -> None:
+    def _delta_reads(self, prev: Set[int], cur: Set[int]) -> None:
         prioritize = False
-        for piece in pieces:
+        # Increment refcount for each new reading piece
+        for piece in cur - prev:
             self._readers[piece] = self._readers.get(piece, 0) + 1
             if piece not in self._reads:
                 self._reads[piece] = asyncio.get_event_loop().create_future()
                 prioritize = True
-        if prioritize:
-            self.prioritize()
-
-    def _dec_read(self, pieces: Sequence[int]) -> None:
-        prioritize = False
-        for piece in pieces:
+        # Decrement refcount for each old reading piece
+        for piece in prev - cur:
             self._readers[piece] -= 1
             assert self._readers[piece] >= 0
             if self._readers[piece] == 0:
@@ -133,29 +129,27 @@ class _State:
         # function, but that had to be synchronous to preserve order for
         # prioritization, and complex call usage is required to avoid holding
         # memory for the lifetime of a request
-        self._inc_read(pieces)
-        dec_index = 0
+        prev_reading: Set[int] = set()
 
         try:
             for i, piece in enumerate(pieces):
+                reading = set(pieces[i : i + self.SEQ_BUFFER])
+                self._delta_reads(prev_reading, reading)
+                prev_reading = reading
                 yield await asyncio.shield(self._reads[piece])
-                # Release memory early
-                self._dec_read([piece])
-                dec_index = i + 1
         finally:
-            self._dec_read(pieces[dec_index:])
+            self._delta_reads(prev_reading, set())
 
     def prioritize(self) -> None:
-        time_critical = list(self._reads)
-        # TODO: combine readaheads and fills
-
         try:
             with ltpy.translate_exceptions():
-                self._prioritize_inner(time_critical)
+                self._prioritize_inner()
         except BaseException as exc:
             self.set_exception(exc)
 
-    def _prioritize_inner(self, time_critical: List[int]) -> None:
+    def _prioritize_inner(self) -> None:
+        time_critical = set(self._reads)
+
         if time_critical:
             # Does not block
             self._handle.set_flags(
@@ -166,36 +160,14 @@ class _State:
         # status()
         self._handle.clear_error()
 
-        prios: Dict[int, int] = {}
+        for piece in time_critical - self._prev_time_critical:
+            self._handle.set_piece_deadline(
+                piece, 0, flags=lt.deadline_flags_t.alert_when_available
+            )
+        for piece in self._prev_time_critical - time_critical:
+            self._handle.reset_piece_deadline(piece)
 
-        # Update deadlines in reverse order, to avoid a temporary state where
-        # the existing deadline of a last-priority piece is earlier than the
-        # new deadline of a first-priority piece
-        for seq, piece in enumerate(reversed(time_critical)):
-            seq = len(time_critical) - seq - 1
-            # We want a read_piece_alert if there are any outstanding
-            # readers
-            want_read = piece in self._reads
-            if want_read:
-                flags = lt.deadline_flags_t.alert_when_available
-            else:
-                flags = 0
-            # Space out the deadline values, so the advancement of unix time
-            # doesn't interfere with our queue order
-            deadline = seq * self.DEADLINE_INTERVAL
-            # Does not block
-            self._handle.set_piece_deadline(piece, deadline, flags=flags)
-            prios[piece] = 7
-
-        prios_to_set = dict(prios)
-        unset_prios = [p for p in self._we_set_prios if p not in prios]
-        # Unset existing priorities
-        # TODO: use a default priority to correspond to share_mode
-        prios_to_set.update({p: 0 for p in unset_prios})
-
-        # Does not block
-        self._handle.prioritize_pieces(list(prios_to_set.items()))
-        self._we_set_prios = prios
+        self._prev_time_critical = time_critical
 
     def set_exception(self, exc: BaseException):
         for future in self._reads.values():
