@@ -133,10 +133,26 @@ class _State:
 
         try:
             for i, piece in enumerate(pieces):
+                # Mark the next N pieces as reading
                 reading = set(pieces[i : i + self.SEQ_BUFFER])
                 self._delta_reads(prev_reading, reading)
                 prev_reading = reading
-                yield await asyncio.shield(self._reads[piece])
+
+                # Wait for the next piece to be read
+                read = self._reads[piece]
+                if read.done():
+                    yield read.result()
+                else:
+                    start = asyncio.get_event_loop().time()
+                    piece_data = await asyncio.shield(read)
+                    elapsed = asyncio.get_event_loop().time() - start
+                    _LOG.debug(
+                        "%s piece %d: waited %dms",
+                        str(self._handle.info_hash()),
+                        piece,
+                        int(elapsed * 1000),
+                    )
+                    yield piece_data
         finally:
             self._delta_reads(prev_reading, set())
 
