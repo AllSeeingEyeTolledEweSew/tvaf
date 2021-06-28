@@ -41,6 +41,7 @@ repos:
         - httpx>=0.18.0,<0.19
         - python-libtorrent>=2.0.4
         - types-cachetools
+        - types-requests
     - id: mypy
       name: mypy38
       language_version: python3.8
@@ -52,6 +53,7 @@ repos:
         - httpx>=0.18.0,<0.19
         - python-libtorrent>=2.0.4
         - types-cachetools
+        - types-requests
     - id: mypy
       name: mypy39
       language_version: python3.9
@@ -63,6 +65,7 @@ repos:
         - httpx>=0.18.0,<0.19
         - python-libtorrent>=2.0.4
         - types-cachetools
+        - types-requests
 - repo: https://gitlab.com/pycqa/flake8.git
   rev: 3.9.2
   hooks:
