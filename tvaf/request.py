@@ -135,6 +135,9 @@ class _State:
             # This will re-fire torrent_error_alert, if any, in lieu of polling
             # status()
             self._handle.clear_error()
+            # NB: this is a no-op if torrent is checking or paused, so watch
+            # alerts and also announce when it leaves these states
+            self._handle.force_dht_announce()
 
         # Design notes: I tried to write this as a simpler read_piece()
         # function, but that had to be synchronous to preserve order for
@@ -211,6 +214,12 @@ class _State:
             exc = ltpy.exception_from_error_code(alert.error)
             if exc is not None:
                 self.set_exception(exc)
+        elif isinstance(
+            alert, (lt.torrent_checked_alert, lt.torrent_resumed_alert)
+        ):
+            with contextlib.suppress(ltpy.InvalidTorrentHandleError):
+                with ltpy.translate_exceptions():
+                    self._handle.force_dht_announce()
 
     # TODO: pause and resume
 
@@ -264,6 +273,8 @@ class RequestService:
             lt.read_piece_alert,
             lt.torrent_removed_alert,
             lt.torrent_error_alert,
+            lt.torrent_checked_alert,
+            lt.torrent_resumed_alert,
         ) as iterator:
             # Do this here to ensure we capture alerts for any jobs started
             # before we created our iterator
