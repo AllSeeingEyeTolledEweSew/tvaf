@@ -94,7 +94,7 @@ class FormatTest(AppTest, lib.TestCase):
 class AlreadyDownloadedTest(AppTest, lib.TestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        self.torrent = tdummy.DEFAULT
+        self.torrent = tdummy.DEFAULT_STABLE
 
         atp = self.torrent.atp()
         atp.save_path = self.tempdir.name
@@ -135,6 +135,30 @@ class AlreadyDownloadedTest(AppTest, lib.TestCase):
         self.assertEqual(r.headers["content-range"], f"bytes 100-199/{length}")
         self.assertEqual(r.content, self.torrent.files[0].data[100:200])
 
+    async def test_206_if_range(self) -> None:
+        r = await self.client.get(f"/v1/btmh/{self.torrent.btmh}/i/0")
+        etag = r.headers["etag"]
+        r = await self.client.get(
+            f"/v1/btmh/{self.torrent.btmh}/i/0",
+            headers={"range": "bytes=100-199", "if-range": etag},
+        )
+        self.assertEqual(r.status_code, 206)
+        self.assertEqual(r.headers["content-length"], "100")
+        length = self.torrent.files[0].length
+        self.assertEqual(r.headers["content-range"], f"bytes 100-199/{length}")
+        self.assertEqual(r.content, self.torrent.files[0].data[100:200])
+
+    async def test_206_if_range_fail(self) -> None:
+        r = await self.client.get(
+            f"/v1/btmh/{self.torrent.btmh}/i/0",
+            headers={"range": "bytes=100-199", "if-range": '"bad"'},
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.headers["content-length"], str(self.torrent.files[0].length)
+        )
+        self.assertEqual(r.content, self.torrent.files[0].data)
+
     async def test_416(self) -> None:
         r = await self.client.get(
             f"/v1/btmh/{self.torrent.btmh}/i/0",
@@ -145,11 +169,21 @@ class AlreadyDownloadedTest(AppTest, lib.TestCase):
         length = self.torrent.files[0].length
         self.assertEqual(r.headers["content-range"], f"bytes */{length}")
 
+    async def test_304(self) -> None:
+        r = await self.client.get(f"/v1/btmh/{self.torrent.btmh}/i/0")
+        etag = r.headers["etag"]
+        r = await self.client.get(
+            f"/v1/btmh/{self.torrent.btmh}/i/0",
+            headers={"if-none-match": etag},
+        )
+        self.assertEqual(r.status_code, 304)
+        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+
 
 class SeedTest(AppTest):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        self.torrent = tdummy.DEFAULT
+        self.torrent = tdummy.DEFAULT_STABLE
 
         self.seed = lib.create_isolated_session_service().session
         self.seed_dir = await concurrency.to_thread(

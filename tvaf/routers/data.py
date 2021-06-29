@@ -24,6 +24,7 @@ from typing import Union
 import fastapi
 import libtorrent as lt
 from pydantic import NonNegativeInt
+from starlette.datastructures import Headers
 from starlette.datastructures import MutableHeaders
 import starlette.responses
 import starlette.types
@@ -40,6 +41,28 @@ from ..services import util as services_util
 ROUTER = fastapi.APIRouter(prefix="/v1", tags=["data access"])
 
 _LOG = logging.getLogger(__name__)
+
+
+# from starlette.staticfiles, which requires aiofiles to even import
+class NotModifiedResponse(starlette.responses.Response):
+    NOT_MODIFIED_HEADERS = (
+        "cache-control",
+        "content-location",
+        "date",
+        "etag",
+        "expires",
+        "vary",
+    )
+
+    def __init__(self, headers: Headers) -> None:
+        super().__init__(
+            status_code=304,
+            headers={
+                name: value
+                for name, value in headers.items()
+                if name in self.NOT_MODIFIED_HEADERS
+            },
+        )
 
 
 def _get_bounds_from_ti(
@@ -150,19 +173,27 @@ async def read_file(
     await helper.configure_atp
 
     status_code = fastapi.status.HTTP_200_OK
+    etag = f'"{btmh}.{file_index}"'
     headers = MutableHeaders(
         {
             "Content-Type": "application/octet-stream",
             "Content-Length": str(length),
             "Accept-Ranges": "bytes",
+            "etag": etag,
+            "cache-control": "public, immutable, max-age=31536000",
         }
     )
 
+    if request.headers.get("if-none-match", "") == etag:
+        return NotModifiedResponse(headers)
+
     slices: Sequence[slice] = []
-    try:
-        slices = byteranges.parse_bytes_range(request.headers.get("range", ""))
-    except ValueError:
-        pass
+    if "range" in request.headers:
+        if request.headers.get("if-range", etag) == etag:
+            try:
+                slices = byteranges.parse_bytes_range(request.headers["range"])
+            except ValueError:
+                pass
     if len(slices) == 1:
         range_start, range_stop, _ = slices[0].indices(length)
         if range_start >= length:

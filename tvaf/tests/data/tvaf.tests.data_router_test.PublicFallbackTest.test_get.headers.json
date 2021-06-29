@@ -1,5 +1,7 @@
 {
     "accept-ranges": "bytes",
+    "cache-control": "public, immutable, max-age=31536000",
     "content-length": "148456",
-    "content-type": "application/octet-stream"
+    "content-type": "application/octet-stream",
+    "etag": "\"1114c23420052b6ea2265d51587530e69425703c87b3.0\""
 }
