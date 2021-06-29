@@ -123,6 +123,18 @@ class AlreadyDownloadedTest(AppTest, lib.TestCase):
         )
         self.assertEqual(r.content, self.torrent.files[0].data)
 
+    async def test_206(self) -> None:
+        r = await self.client.get(
+            f"/v1/btmh/{self.torrent.btmh}/i/0",
+            headers={"range": "bytes=100-199"},
+        )
+        self.assertEqual(r.status_code, 206)
+        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+        self.assertEqual(r.headers["content-length"], "100")
+        length = self.torrent.files[0].length
+        self.assertEqual(r.headers["content-range"], f"bytes 100-199/{length}")
+        self.assertEqual(r.content, self.torrent.files[0].data[100:200])
+
 
 class SeedTest(AppTest):
     async def asyncSetUp(self) -> None:

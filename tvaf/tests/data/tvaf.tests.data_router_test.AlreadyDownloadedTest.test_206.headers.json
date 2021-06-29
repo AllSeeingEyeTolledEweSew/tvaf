@@ -1,5 +1,6 @@
 {
     "accept-ranges": "bytes",
-    "content-length": "148456",
+    "content-length": "100",
+    "content-range": "bytes 100-199/148456",
     "content-type": "application/octet-stream"
 }

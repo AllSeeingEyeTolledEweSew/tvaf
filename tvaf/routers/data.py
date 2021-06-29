@@ -17,15 +17,18 @@ from typing import Awaitable
 from typing import Callable
 from typing import Iterator
 from typing import Optional
+from typing import Sequence
 from typing import Tuple
 from typing import Union
 
 import fastapi
 import libtorrent as lt
 from pydantic import NonNegativeInt
+from starlette.datastructures import MutableHeaders
 import starlette.responses
 import starlette.types
 
+from .. import byteranges
 from .. import concurrency
 from .. import ltpy
 from .. import multihash
@@ -142,13 +145,39 @@ async def read_file(
     helper = _Helper(btmh, file_index)
     # May add the torrent, to figure out bounds from its torrent_info
     start, stop = await helper.bounds
+    length = stop - start
     # Do this even for HEAD requests, to ensure we can access the torrent
     await helper.configure_atp
 
-    headers = {
-        "Content-Type": "application/octet-stream",
-        "Content-Length": str(stop - start),
-    }
+    status_code = fastapi.status.HTTP_200_OK
+    headers = MutableHeaders(
+        {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": str(length),
+            "Accept-Ranges": "bytes",
+        }
+    )
+
+    slices: Sequence[slice] = []
+    try:
+        slices = byteranges.parse_bytes_range(request.headers.get("range", ""))
+    except ValueError:
+        pass
+    if len(slices) == 1:
+        range_start, range_stop, _ = slices[0].indices(length)
+        if range_start >= length:
+            headers["content-range"] = f"bytes */{length}"
+            headers["content-length"] = "0"
+            raise fastapi.HTTPException(
+                status_code=416,
+                headers=dict(headers),
+                detail="requested range does not overlap file bounds",
+            )
+        status_code = fastapi.status.HTTP_206_PARTIAL_CONTENT
+        content_range = f"bytes {range_start}-{range_stop - 1}/{length}"
+        headers["content-range"] = content_range
+        headers["content-length"] = str(range_stop - range_start)
+        start, stop = start + range_start, start + range_stop
 
     iterator: Union[AsyncIterator[bytes], Iterator[bytes]] = iter(())
     if request.method == "GET":
@@ -173,4 +202,6 @@ async def read_file(
 
         iterator = clamped_pieces()
 
-    return starlette.responses.StreamingResponse(iterator, headers=headers)
+    return starlette.responses.StreamingResponse(
+        iterator, status_code=status_code, headers=dict(headers)
+    )
