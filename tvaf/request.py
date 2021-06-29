@@ -125,6 +125,17 @@ class _State:
 
         asyncio.create_task(check())
 
+        # Do some once-per-stream setup
+        with ltpy.translate_exceptions():
+            # NB: some stuff here may generate alerts, so ensure we setup our
+            # read futures before we await/yield
+            self._handle.set_flags(
+                lt.torrent_flags.auto_managed, lt.torrent_flags.auto_managed
+            )
+            # This will re-fire torrent_error_alert, if any, in lieu of polling
+            # status()
+            self._handle.clear_error()
+
         # Design notes: I tried to write this as a simpler read_piece()
         # function, but that had to be synchronous to preserve order for
         # prioritization, and complex call usage is required to avoid holding
@@ -165,16 +176,6 @@ class _State:
 
     def _prioritize_inner(self) -> None:
         time_critical = set(self._reads)
-
-        if time_critical:
-            # Does not block
-            self._handle.set_flags(
-                lt.torrent_flags.auto_managed, lt.torrent_flags.auto_managed
-            )
-
-        # This will re-fire torrent_error_alert, if any, in lieu of calling
-        # status()
-        self._handle.clear_error()
 
         for piece in time_critical - self._prev_time_critical:
             self._handle.set_piece_deadline(
