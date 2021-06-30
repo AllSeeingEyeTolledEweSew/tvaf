@@ -28,7 +28,6 @@ from typing_extensions import TypedDict
 
 from tvaf import multihash
 
-
 PIECE_LENGTH = 16384
 NAME = b"test.txt"
 LEN = PIECE_LENGTH * 9 + 1000

@@ -11,25 +11,26 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+import logging
+from typing import Any
+from typing import Dict
+
 import fastapi
+import starlette.responses
 
-from . import services
-from .routers import config as config_router
-from .routers import data as data_router
-from .routers import torrent as torrent_router
+from .. import config as config_lib
+from .. import services
 
-APP = fastapi.FastAPI()
+ROUTER = fastapi.APIRouter(prefix="/v1", tags=["server config"])
 
-APP.include_router(config_router.ROUTER)
-APP.include_router(data_router.ROUTER)
-APP.include_router(torrent_router.ROUTER)
+_LOG = logging.getLogger(__name__)
 
 
-@APP.on_event("startup")
-async def _startup() -> None:
-    await services.startup()
+@ROUTER.get("/config", response_class=starlette.responses.JSONResponse)
+async def get() -> config_lib.Config:
+    return await services.get_config()
 
 
-@APP.on_event("shutdown")
-async def _shutdown() -> None:
-    await services.shutdown()
+@ROUTER.post("/config")
+async def post(config: Dict[str, Any]) -> None:
+    await services.set_config(config_lib.Config(config))

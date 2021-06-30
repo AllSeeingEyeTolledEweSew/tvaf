@@ -11,25 +11,24 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-import fastapi
 
-from . import services
-from .routers import config as config_router
-from .routers import data as data_router
-from .routers import torrent as torrent_router
+from tvaf import config as config_lib
+from tvaf import services
 
-APP = fastapi.FastAPI()
-
-APP.include_router(config_router.ROUTER)
-APP.include_router(data_router.ROUTER)
-APP.include_router(torrent_router.ROUTER)
+from . import lib
 
 
-@APP.on_event("startup")
-async def _startup() -> None:
-    await services.startup()
+class GetTest(lib.AppTest, lib.TestCase):
+    async def test_get(self) -> None:
+        r = await self.client.get("/v1/config")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), await services.get_config())
 
 
-@APP.on_event("shutdown")
-async def _shutdown() -> None:
-    await services.shutdown()
+class PostTest(lib.AppTest, lib.TestCase):
+    async def test_get(self) -> None:
+        config = config_lib.Config(await services.get_config())
+        config["test"] = "test"
+        r = await self.client.post("/v1/config", json=config)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual((await services.get_config())["test"], "test")
