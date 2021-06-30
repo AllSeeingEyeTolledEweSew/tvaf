@@ -135,6 +135,9 @@ class _State:
             # This will re-fire torrent_error_alert, if any, in lieu of polling
             # status()
             self._handle.clear_error()
+        # NB: force_dht_announce is a no-op if the torrent is checking or
+        # paused, so watch alerts and re-fire when leaving these states
+        asyncio.create_task(self._maybe_dht_announce())
 
         # Design notes: I tried to write this as a simpler read_piece()
         # function, but that had to be synchronous to preserve order for
@@ -217,8 +220,13 @@ class _State:
             # NB: libtorrent's current implementation will just queue the
             # torrent for the next session-wide dht announce cycle, which
             # defaults to 15 minutes!
-            with contextlib.suppress(ltpy.InvalidTorrentHandleError):
-                with ltpy.translate_exceptions():
+            asyncio.create_task(self._maybe_dht_announce())
+
+    async def _maybe_dht_announce(self) -> None:
+        with contextlib.suppress(ltpy.InvalidTorrentHandleError):
+            with ltpy.translate_exceptions():
+                status = await concurrency.to_thread(self._handle.status)
+                if status.num_peers == 0:
                     self._handle.force_dht_announce()
 
     # TODO: pause and resume
