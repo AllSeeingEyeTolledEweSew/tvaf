@@ -25,6 +25,7 @@ import json
 import os
 import pathlib
 import sys
+import tempfile
 import time
 from typing import Any
 from typing import Dict
@@ -38,12 +39,19 @@ import unittest
 import unittest.mock
 import uuid
 
+import asgi_lifespan
+import httpx
 import importlib_resources
+from later.unittest.backport import async_case
 import libtorrent as lt
 
+from tvaf import app as app_lib
 from tvaf import concurrency
 from tvaf import config as config_lib
+from tvaf import services
 from tvaf import session as session_lib
+
+from . import tdummy
 
 if sys.version_info >= (3, 8):
     import importlib.metadata as importlib_metadata
@@ -266,3 +274,42 @@ class EntryPointFaker:
         if not isinstance(group, str):
             group = f"{group.__module__}.{group.__qualname__}"
         self._dist.add_entry_point(group, name, value)
+
+
+class AppTest(async_case.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.tempdir = await concurrency.to_thread(tempfile.TemporaryDirectory)
+        self.cwd = await concurrency.to_thread(pathlib.Path.cwd)
+        await concurrency.to_thread(os.chdir, self.tempdir.name)
+        self.config = create_isolated_config()
+        await self.config.write_to_disk(services.CONFIG_PATH)
+        self.lifespan_manager = asgi_lifespan.LifespanManager(
+            app_lib.APP, startup_timeout=None, shutdown_timeout=None
+        )
+        await self.lifespan_manager.__aenter__()
+        self.client = httpx.AsyncClient(
+            app=app_lib.APP, base_url="http://test"
+        )
+
+    async def asyncTearDown(self) -> None:
+        await self.client.aclose()
+        await self.lifespan_manager.__aexit__(None, None, None)
+        await concurrency.to_thread(os.chdir, self.cwd)
+        await concurrency.to_thread(self.tempdir.cleanup)
+
+
+class AppTestWithTorrent(AppTest):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.torrent = tdummy.DEFAULT_STABLE
+
+        atp = self.torrent.atp()
+        atp.save_path = self.tempdir.name
+        session = await services.get_session()
+        self.handle = await concurrency.to_thread(session.add_torrent, atp)
+        # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
+        # checking silently fails in libtorrent 1.2.8.
+        await wait_done_checking_or_error(self.handle)
+        for i, piece in enumerate(self.torrent.pieces):
+            self.handle.add_piece(i, piece, 0)

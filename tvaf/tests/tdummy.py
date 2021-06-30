@@ -28,7 +28,6 @@ from typing_extensions import TypedDict
 
 from tvaf import multihash
 
-from . import lib
 
 PIECE_LENGTH = 16384
 NAME = b"test.txt"
@@ -142,7 +141,6 @@ class Torrent:
         self._info: Optional[Dict[bytes, Any]] = None
         self._dict: Optional[Dict[bytes, Any]] = None
         self._info_hash_bytes: Optional[bytes] = None
-        self._eps: Optional[lib.EntryPointFaker] = None
 
     @property
     def data(self) -> bytes:
@@ -218,22 +216,6 @@ class Torrent:
         atp = lt.add_torrent_params()
         self.configure_atp(atp)
         return atp
-
-    @property
-    def entry_point_faker(self) -> lib.EntryPointFaker:
-        if self._eps is None:
-            self._eps = lib.EntryPointFaker()
-            self._eps.add(
-                "_tdummy",
-                self.get_configure_atp,
-                "tvaf.torrent_info.get_configure_atp",
-            )
-            self._eps.add(
-                "_tdummy",
-                self.get_file_bounds_from_cache,
-                "tvaf.torrent_info.get_file_bounds_from_cache",
-            )
-        return self._eps
 
     def configure_atp(self, atp: lt.add_torrent_params) -> None:
         # this is necessary so that

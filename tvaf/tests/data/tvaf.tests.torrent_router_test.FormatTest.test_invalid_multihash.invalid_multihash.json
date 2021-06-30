@@ -1,0 +1,12 @@
+{
+    "detail": [
+        {
+            "loc": [
+                "path",
+                "btmh"
+            ],
+            "msg": "invalid varint",
+            "type": "value_error"
+        }
+    ]
+}

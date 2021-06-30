@@ -10,15 +10,8 @@
 # LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
-import os
-import pathlib
 import tempfile
 
-import asgi_lifespan
-import httpx
-from later.unittest.backport import async_case
-
-from tvaf import app as app_lib
 from tvaf import concurrency
 from tvaf import services
 
@@ -26,29 +19,7 @@ from . import lib
 from . import tdummy
 
 
-class AppTest(async_case.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self) -> None:
-        self.tempdir = await concurrency.to_thread(tempfile.TemporaryDirectory)
-        self.cwd = await concurrency.to_thread(pathlib.Path.cwd)
-        await concurrency.to_thread(os.chdir, self.tempdir.name)
-        self.config = lib.create_isolated_config()
-        await self.config.write_to_disk(services.CONFIG_PATH)
-        self.lifespan_manager = asgi_lifespan.LifespanManager(
-            app_lib.APP, startup_timeout=None, shutdown_timeout=None
-        )
-        await self.lifespan_manager.__aenter__()
-        self.client = httpx.AsyncClient(
-            app=app_lib.APP, base_url="http://test"
-        )
-
-    async def asyncTearDown(self) -> None:
-        await self.client.aclose()
-        await self.lifespan_manager.__aexit__(None, None, None)
-        await concurrency.to_thread(os.chdir, self.cwd)
-        await concurrency.to_thread(self.tempdir.cleanup)
-
-
-class FormatTest(AppTest, lib.TestCase):
+class FormatTest(lib.AppTest, lib.TestCase):
     async def test_invalid_multihash(self) -> None:
         # not a valid multihash
         r = await self.client.get("/v1/btmh/ffff/i/0")
@@ -91,21 +62,7 @@ class FormatTest(AppTest, lib.TestCase):
         self.assert_golden_json(r.json(), suffix="bad_index.json")
 
 
-class AlreadyDownloadedTest(AppTest, lib.TestCase):
-    async def asyncSetUp(self) -> None:
-        await super().asyncSetUp()
-        self.torrent = tdummy.DEFAULT_STABLE
-
-        atp = self.torrent.atp()
-        atp.save_path = self.tempdir.name
-        session = await services.get_session()
-        handle = await concurrency.to_thread(session.add_torrent, atp)
-        # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
-        # checking silently fails in libtorrent 1.2.8.
-        await lib.wait_done_checking_or_error(handle)
-        for i, piece in enumerate(self.torrent.pieces):
-            handle.add_piece(i, piece, 0)
-
+class AlreadyDownloadedTest(lib.AppTestWithTorrent, lib.TestCase):
     async def test_head(self) -> None:
         r = await self.client.head(f"/v1/btmh/{self.torrent.btmh}/i/0")
         self.assertEqual(r.status_code, 200)
@@ -180,7 +137,7 @@ class AlreadyDownloadedTest(AppTest, lib.TestCase):
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
 
 
-class SeedTest(AppTest):
+class SeedTest(lib.AppTest):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.torrent = tdummy.DEFAULT_STABLE

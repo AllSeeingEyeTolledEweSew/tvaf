@@ -11,23 +11,27 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-import fastapi
+import base64
+import functools
+import operator
+from typing import List
+from typing import Sequence
 
-from . import services
-from .routers import data as data_router
-from .routers import torrent as torrent_router
-
-APP = fastapi.FastAPI()
-
-APP.include_router(data_router.ROUTER)
-APP.include_router(torrent_router.ROUTER)
+import pydantic
 
 
-@APP.on_event("startup")
-async def _startup() -> None:
-    await services.startup()
+class TorrentStatus(pydantic.BaseModel):
+    pieces: str
+    piece_priorities: List[int]
 
 
-@APP.on_event("shutdown")
-async def _shutdown() -> None:
-    await services.shutdown()
+def seq_to_bitfield(seq: Sequence) -> bytes:
+    offsets = range(0, len(seq), 8)
+    splits = (seq[ofs : ofs + 8] for ofs in offsets)
+    enums = (enumerate(spl) for spl in splits)
+    bit_splits = ((0x80 >> i if e else 0 for i, e in enum) for enum in enums)
+    return bytes(functools.reduce(operator.__or__, b, 0) for b in bit_splits)
+
+
+def seq_to_bitfield64(seq: Sequence) -> str:
+    return base64.b64encode(seq_to_bitfield(seq)).decode("latin-1")
