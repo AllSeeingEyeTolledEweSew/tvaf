@@ -135,9 +135,6 @@ class _State:
             # This will re-fire torrent_error_alert, if any, in lieu of polling
             # status()
             self._handle.clear_error()
-            # NB: this is a no-op if torrent is checking or paused, so watch
-            # alerts and also announce when it leaves these states
-            self._handle.force_dht_announce()
 
         # Design notes: I tried to write this as a simpler read_piece()
         # function, but that had to be synchronous to preserve order for
@@ -217,6 +214,9 @@ class _State:
         elif isinstance(
             alert, (lt.torrent_checked_alert, lt.torrent_resumed_alert)
         ):
+            # NB: libtorrent's current implementation will just queue the
+            # torrent for the next session-wide dht announce cycle, which
+            # defaults to 15 minutes!
             with contextlib.suppress(ltpy.InvalidTorrentHandleError):
                 with ltpy.translate_exceptions():
                     self._handle.force_dht_announce()
