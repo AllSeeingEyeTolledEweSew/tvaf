@@ -12,6 +12,8 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 
+import datetime
+
 from tvaf import concurrency
 from tvaf import ltpy
 from tvaf import services
@@ -52,6 +54,23 @@ class FormatTest(lib.AppTest, lib.TestCase):
 class StatusTest(lib.AppTestWithTorrent, lib.TestCase):
     async def test_get(self) -> None:
         r = await self.client.get(f"/v1/session/btmh/{self.torrent.btmh}")
+        self.assertEqual(r.status_code, 200)
+        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+
+        status_dict = r.json()
+        # test unstable parts
+        self.assertIsInstance(status_dict.pop("added_time"), int)
+        self.assertIsInstance(status_dict.pop("completed_time"), int)
+        datetime.datetime.fromisoformat(status_dict.pop("last_download"))
+        self.assertEqual(status_dict.pop("save_path"), self.tempdir.name)
+        self.assert_golden_json(status_dict, suffix="body.json")
+
+
+class GetPiecePrioritiesTest(lib.AppTestWithTorrent, lib.TestCase):
+    async def test_get(self) -> None:
+        r = await self.client.get(
+            f"/v1/session/btmh/{self.torrent.btmh}/piece_priorities"
+        )
         self.assertEqual(r.status_code, 200)
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
         self.assert_golden_json(r.json(), suffix="body.json")
