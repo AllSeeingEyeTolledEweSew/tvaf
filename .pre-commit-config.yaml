@@ -52,7 +52,6 @@ repos:
       exclude: |
         (?x)^(
           .*/test_.*\.py|
-          tvaf/app.py|
           tvaf/byteranges.py|
           tvaf/concurrency.py|
           tvaf/config.py|

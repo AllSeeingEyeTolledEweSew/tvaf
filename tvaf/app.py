@@ -11,6 +11,14 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+"""The tvaf ASGI app.
+
+Example:
+    Run tvaf with your favorite ASGI server.
+
+        python -m uvicorn tvaf.app:APP
+"""
+
 import fastapi
 
 from . import services
@@ -19,6 +27,7 @@ from .routers import data as data_router
 from .routers import torrent as torrent_router
 
 APP = fastapi.FastAPI()
+"""The tvaf ASGI app."""
 
 APP.include_router(config_router.ROUTER)
 APP.include_router(data_router.ROUTER)
