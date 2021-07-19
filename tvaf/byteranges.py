@@ -11,6 +11,8 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+"""Utilities for serving HTTP byte-range requests according to RFC 7233."""
+
 import re
 from typing import Any
 from typing import Dict
@@ -30,6 +32,31 @@ _RANGE_RE = re.compile(r"(\d+)?-(\d+)?")
 
 
 def parse_bytes_range(value: str) -> Sequence[slice]:
+    """Parses an HTTP Range header with "bytes" units.
+
+    This parses an HTTP Range header according RFC 7233.
+
+    Args:
+        value: The value of the Range: header.
+
+    Returns:
+        A Sequence of slice objects. There will be one slice per byte range
+        in the input, and they will be returned in input order. Either the
+
+    Raises:
+        ValueError: value doesn't start with "bytes=", or otherwise doesn't
+        conform to the Byte Ranges section of RFC 7233.
+
+    Examples:
+        >>> parse_bytes_range("bytes=0-499")
+        [slice(0, 500)]
+        >>> parse_bytes_range("bytes=0-499,500-999")
+        [slice(0, 500), slice(500, 1000)]
+        >>> parse_bytes_range("bytes=-500")
+        [slice(-500, None)]
+        >>> parse_bytes_range("bytes=9500-")
+        [slice(9500, None)]
+    """
     if not value.startswith("bytes="):
         raise ValueError(value)
     result: List[slice] = []
@@ -101,6 +128,48 @@ def _get_multipart_length(
 
 
 class ByteRangesResponse(starlette.responses.Response):
+    """An ASGI Response class for streaming HTTP 206 (Partial Content).
+
+    ByteRangesResponse generates appropriate responses for RFC 7233 Range
+    Requests.
+
+    The slices attribute describes the byte ranges of the parts to be sent in
+    order. ByteRangesResponse will only send parts as described by slices; it
+    does not reorder or merge them.
+
+    If there's only one part, then the response will include a Content-Range
+    header, and the body will just be the requested part.
+
+    If there are multiple parts, then ByteRangesResponse will send a
+    multipart/byteranges payload according to RFC 7233. The Content-Type of
+    each body part will be the Content-Type supplied in the headers (or
+    media_type) arguments. It will use a UUID for the content boundary,
+    uniquely generated for each response.
+
+    You can supply the content argument to serve parts of some pre-generated
+    content. You can also override the send_range() method to dynamically get
+    or generate the content parts. Note that even for generated content, you
+    must supply the complete set of byte ranges in the slices argument.
+
+    The headers argument, and media_type, must be the headers that would be
+    sent in a 200 (OK) response. The Content-Type must be the type of the
+    content being split into parts. If Content-Length would have been sent
+    in a 200 (OK) response, it is required here.
+
+    ByteRangesResponse computes an accurate Content-Length for the response
+    payload, even for generated content and even where an overall
+    Content-Length is not supplied in the headers argument. The response's
+    Content-Length is deterministic based on the byte ranges to be sent, so it
+    is computed and sent before send_range() is ever called.
+
+    ByteRangesResponse will detect client disconnection and cancel its
+    response-streaming task, similar to starlette's StreamingResponse.
+
+    Attributes:
+        slices: The byte ranges of content to send.
+        boundary: The boundary string used in the multipart response payload.
+    """
+
     def __init__(
         self,
         slices: Sequence[slice],
@@ -109,6 +178,21 @@ class ByteRangesResponse(starlette.responses.Response):
         content: Any = None,
         media_type: str = None,
     ) -> None:
+        """Constructs a ByteRangesResponse.
+
+        Args:
+            slices: The byte ranges of content to send. The stop attribute of
+                each slice must not be negative. If Content-Length is not
+                supplied, then the stop attribute of each slice must not be
+                None.
+            headers: The headers that would have been sent in a 200 (OK)
+                response.
+            content: The overall content to be split into parts. Must be
+                convertible to bytes.
+            media_type: The Content-Type of the overall content to be split
+                into parts. Only required if Content-Type does not occur in
+                headers.
+        """
         super().__init__(
             status_code=206,
             headers=headers,
@@ -136,13 +220,13 @@ class ByteRangesResponse(starlette.responses.Response):
                 )
             )
 
-    async def listen_for_disconnect(self, receive: Receive) -> None:
+    async def _listen_for_disconnect(self, receive: Receive) -> None:
         while True:
             message = await receive()
             if message["type"] == "http.disconnect":
                 break
 
-    async def stream_response(self, scope: Scope, send: Send) -> None:
+    async def _stream_response(self, scope: Scope, send: Send) -> None:
         await send(
             {
                 "type": "http.response.start",
@@ -187,21 +271,50 @@ class ByteRangesResponse(starlette.responses.Response):
             )
 
     async def send_range(self, scope: Scope, send: Send, s: slice) -> None:
+        """Sends a part of the overall content.
+
+        This internal method gets called by the ASGI app to send a part of the
+        content. It will be called once for each slice in the slices attribute,
+        in order.
+
+        This sends just the part of the content specified by the slice. It
+        doesn't send the headers or the multipart/byteranges scaffolding.
+
+        Override this method to stream dynamically-retrieved or
+        dynamically-generated content.
+
+        This method should use the send callback to send one or more
+        "http.response.body" messages (or equivalents). The "more_body"
+        parameter should always be True. The total amount of data sent must be
+        equal to the length of the slice.
+
+        Args:
+            scope: The ASGI scope structure.
+            send: The ASGI send callback.
+            s: A byte range representing the content to be sent.
+        """
         await send(
             {
                 "type": "http.response.body",
-                "body": await self.get_range(s),
+                "body": await self._get_range(s),
                 "more_body": True,
             }
         )
 
-    async def get_range(self, s: slice) -> Any:
+    async def _get_range(self, s: slice) -> Any:
         return self.body[s]
 
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
     ) -> None:
+        """Invokes the response as an ASGI app.
+
+        Args:
+            scope: The ASGI scope structure.
+            receive: The ASGI receive callback.
+            send: The ASGI send callback.
+        """
         await starlette.concurrency.run_until_first_complete(
-            (self.stream_response, {"scope": scope, "send": send}),
-            (self.listen_for_disconnect, {"receive": receive}),
+            (self._stream_response, {"scope": scope, "send": send}),
+            (self._listen_for_disconnect, {"receive": receive}),
         )
