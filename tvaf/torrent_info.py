@@ -13,30 +13,53 @@
 
 from typing import Awaitable
 from typing import Callable
+from typing import cast
+from typing import Iterable
 from typing import Tuple
+from typing import TypeVar
 
-import libtorrent as lt
-
+from . import concurrency
 from . import lifecycle
 from . import multihash
+from . import plugins
+
+_T = TypeVar("_T")
+
+
+async def _first_from_plugins(aws: Iterable[Awaitable[_T]]) -> _T:
+    # TODO: should we report unexpected exceptions from runners-up?
+    with concurrency.as_completed_ctx(aws) as iterator:
+        for future in iterator:
+            try:
+                return await future
+            except KeyError:
+                pass
+    raise KeyError()
 
 
 @lifecycle.alru_cache(maxsize=256)
 async def get_file_bounds_from_cache(
     btmh: multihash.Multihash, file_index: int
 ) -> Tuple[int, int]:
-    # TODO
-    raise KeyError(btmh)
+    funcs = cast(
+        Iterable[
+            Callable[[multihash.Multihash, int], Awaitable[Tuple[int, int]]]
+        ],
+        plugins.load_entry_points(
+            "tvaf.torrent_info.get_file_bounds_from_cache"
+        ),
+    )
+    return await _first_from_plugins(
+        [func(btmh, file_index) for func in funcs]
+    )
 
 
-async def get_configure_atp(
-    btmh: multihash.Multihash,
-) -> Callable[[lt.add_torrent_params], Awaitable]:
-    # TODO
-    if btmh.func != multihash.Func.sha1:
-        raise KeyError(btmh)
-
-    async def configure_public(atp: lt.add_torrent_params) -> None:
-        atp.info_hash = lt.sha1_hash(btmh.digest)
-
-    return configure_public
+@lifecycle.alru_cache(maxsize=256)
+async def get_is_private_from_cache(btmh: multihash.Multihash) -> bool:
+    funcs = cast(
+        Iterable[Callable[[multihash.Multihash], Awaitable[bool]]],
+        plugins.load_entry_points(
+            "tvaf.torrent_info.get_is_private_from_cache"
+        ),
+    )
+    return await _first_from_plugins([func(btmh) for func in funcs])

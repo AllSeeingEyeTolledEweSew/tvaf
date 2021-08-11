@@ -15,10 +15,13 @@ import logging
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
+from typing import cast
+from typing import Iterable
 from typing import Iterator
 from typing import Optional
 from typing import Sequence
 from typing import Tuple
+from typing import TypeVar
 from typing import Union
 
 import fastapi
@@ -33,6 +36,7 @@ from .. import byteranges
 from .. import concurrency
 from .. import ltpy
 from .. import multihash
+from .. import plugins
 from .. import services
 from .. import torrent_info
 from .. import util
@@ -63,6 +67,26 @@ class NotModifiedResponse(starlette.responses.Response):
                 if name in self.NOT_MODIFIED_HEADERS
             },
         )
+
+
+_T = TypeVar("_T")
+
+
+async def _first_from_plugins(aws: Iterable[Awaitable[_T]]) -> _T:
+    # TODO: should we report unexpected exceptions from runners-up?
+    with concurrency.as_completed_ctx(aws) as iterator:
+        for future in iterator:
+            try:
+                return await future
+            except KeyError:
+                pass
+    raise KeyError()
+
+
+def _btmh_to_info_hashes(btmh: multihash.Multihash) -> lt.info_hash_t:
+    if btmh.func == multihash.Func.sha1:
+        return lt.info_hash_t(lt.sha1_hash(btmh.digest))
+    raise ValueError(btmh.func)
 
 
 def _get_bounds_from_ti(
@@ -126,11 +150,21 @@ class _Helper:
             )
 
     @concurrency.acached_property
-    async def configure_atp(
+    async def configure_swarms(
         self,
     ) -> Callable[[lt.add_torrent_params], Awaitable]:
+        funcs = cast(
+            Iterable[
+                Callable[
+                    [multihash.Multihash],
+                    Awaitable[Callable[[lt.add_torrent_params], Awaitable]],
+                ]
+            ],
+            plugins.load_entry_points("tvaf.swarm.get_configure_swarm"),
+        )
+        awaitables = [func(self.btmh) for func in funcs]
         try:
-            return await torrent_info.get_configure_atp(self.btmh)
+            return await _first_from_plugins(awaitables)
         except KeyError:
             raise fastapi.HTTPException(
                 status_code=fastapi.status.HTTP_404_NOT_FOUND,
@@ -142,9 +176,10 @@ class _Helper:
         existing = await self.existing_handle
         if existing.is_valid():
             return existing
-        configure_atp = await self.configure_atp
+        configure_swarms = await self.configure_swarms
         atp = await services.get_default_atp()
-        await configure_atp(atp)
+        atp.info_hashes = _btmh_to_info_hashes(self.btmh)
+        await configure_swarms(atp)
         await services.configure_atp(atp)
         atp.flags &= ~lt.torrent_flags.duplicate_is_error
         session = await services.get_session()
@@ -169,8 +204,6 @@ async def read_file(
     # May add the torrent, to figure out bounds from its torrent_info
     start, stop = await helper.bounds
     length = stop - start
-    # Do this even for HEAD requests, to ensure we can access the torrent
-    await helper.configure_atp
 
     status_code = fastapi.status.HTTP_200_OK
     etag = f'"{btmh}.{file_index}"'
