@@ -21,9 +21,9 @@ from tvaf import plugins
 from . import lib
 
 if sys.version_info >= (3, 8):
-    import importlib.metadata as importlib_metadata
+    pass
 else:
-    import importlib_metadata
+    pass
 
 
 def return_a() -> str:
@@ -34,7 +34,7 @@ def return_b() -> str:
     return "b"
 
 
-class GetEntryPointsTest(unittest.TestCase):
+class GetTest(unittest.TestCase):
     def setUp(self) -> None:
         self.fake_eps = lib.EntryPointFaker()
         self.fake_eps.enable()
@@ -45,35 +45,6 @@ class GetEntryPointsTest(unittest.TestCase):
         self.fake_eps.disable()
         lifecycle.clear()
 
-    def test_order(self) -> None:
-        self.assertEqual(
-            list(plugins.get_entry_points("test")),
-            [
-                importlib_metadata.EntryPoint(
-                    "a", f"{__name__}:return_a", "test"
-                ),
-                importlib_metadata.EntryPoint(
-                    "b", f"{__name__}:return_b", "test"
-                ),
-            ],
-        )
-
-    def test_no_entry_points(self) -> None:
-        self.assertEqual(list(plugins.get_entry_points("does_not_exist")), [])
-
-
-class LoadEntryPointsTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.fake_eps = lib.EntryPointFaker()
-        self.fake_eps.enable()
-        self.fake_eps.add("a", return_a, "test")
-        self.fake_eps.add("b", return_b, "test")
-
-    def tearDown(self) -> None:
-        self.fake_eps.disable()
-        lifecycle.clear()
-
-    def test_get_plugins(self) -> None:
-        plugin_list = plugins.load_entry_points("test")
-        values = [plugin() for plugin in plugin_list]
-        self.assertEqual(values, ["a", "b"])
+    def test_get(self) -> None:
+        plugin_map = plugins.get("test")
+        self.assertEqual(plugin_map, {"a": return_a, "b": return_b})

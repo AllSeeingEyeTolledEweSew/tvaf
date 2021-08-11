@@ -45,9 +45,7 @@ async def get_file_bounds_from_cache(
         Iterable[
             Callable[[multihash.Multihash, int], Awaitable[Tuple[int, int]]]
         ],
-        plugins.load_entry_points(
-            "tvaf.torrent_info.get_file_bounds_from_cache"
-        ),
+        plugins.get("tvaf.torrent_info.get_file_bounds_from_cache").values(),
     )
     return await _first_from_plugins(
         [func(btmh, file_index) for func in funcs]
@@ -58,8 +56,6 @@ async def get_file_bounds_from_cache(
 async def get_is_private_from_cache(btmh: multihash.Multihash) -> bool:
     funcs = cast(
         Iterable[Callable[[multihash.Multihash], Awaitable[bool]]],
-        plugins.load_entry_points(
-            "tvaf.torrent_info.get_is_private_from_cache"
-        ),
+        plugins.get("tvaf.torrent_info.get_is_private_from_cache").values(),
     )
     return await _first_from_plugins([func(btmh) for func in funcs])

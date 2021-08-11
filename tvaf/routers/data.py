@@ -160,7 +160,7 @@ class _Helper:
                     Awaitable[Callable[[lt.add_torrent_params], Awaitable]],
                 ]
             ],
-            plugins.load_entry_points("tvaf.swarm.get_configure_swarm"),
+            plugins.get("tvaf.swarm.get_configure_swarm").values(),
         )
         awaitables = [func(self.btmh) for func in funcs]
         try:

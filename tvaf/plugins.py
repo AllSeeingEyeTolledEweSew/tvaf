@@ -12,13 +12,14 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 
-import collections
 import sys
 from typing import Any
 from typing import cast
+from typing import Dict
 from typing import Iterable
-from typing import List
+from typing import Mapping
 from typing import Tuple
+import warnings
 
 from . import lifecycle
 
@@ -46,16 +47,17 @@ def _select_eps_group(
         )
 
 
-def get_entry_points(group_name: str) -> Iterable[Any]:
-    name_to_entry_points = collections.defaultdict(list)
-    for entry_point in _select_eps_group(group_name):
-        name_to_entry_points[entry_point.name].append(entry_point)
-    entry_points: List[importlib_metadata.EntryPoint] = []
-    for _, values in sorted(name_to_entry_points.items()):
-        entry_points.extend(values)
-    return entry_points
-
-
 @lifecycle.lru_cache(maxsize=256)
-def load_entry_points(group_name: str) -> Iterable[Any]:
-    return [entry.load() for entry in get_entry_points(group_name)]
+def get(group_name: str) -> Mapping[str, Any]:
+    name_to_entry_point: Dict[str, importlib_metadata.EntryPoint] = {}
+    for entry_point in _select_eps_group(group_name):
+        name = entry_point.name
+        existing = name_to_entry_point.get(name, entry_point)
+        if existing.value != entry_point.value:
+            warnings.warn(
+                "conflicting values for entry point "
+                f"[{group_name} {name}]: "
+                f"{entry_point.value} != {existing.value}"
+            )
+        name_to_entry_point[name] = entry_point
+    return {name: ep.load() for name, ep in name_to_entry_point.items()}

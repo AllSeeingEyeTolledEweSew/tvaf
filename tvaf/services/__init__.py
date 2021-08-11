@@ -44,19 +44,19 @@ DEFAULT_DOWNLOAD_PATH = pathlib.Path("download")
 
 
 async def startup() -> None:
-    for func in plugins.load_entry_points("tvaf.services.startup"):
+    for _, func in sorted(plugins.get("tvaf.services.startup").items()):
         await cast(Callable[[], Awaitable], func)()
 
 
 async def shutdown() -> None:
-    for func in plugins.load_entry_points("tvaf.services.shutdown"):
+    for _, func in sorted(plugins.get("tvaf.services.shutdown").items()):
         await cast(Callable[[], Awaitable], func)()
 
 
 def stage_config(config: config_lib.Config) -> AsyncContextManager[None]:
     stages = cast(
         Iterable[Callable[[config_lib.Config], AsyncContextManager[None]]],
-        plugins.load_entry_points("tvaf.services.stage_config"),
+        plugins.get("tvaf.services.stage_config").values(),
     )
     return config_lib.stage_config(config, *stages)
 
@@ -69,13 +69,13 @@ async def set_config(config: config_lib.Config):
 
 async def get_default_atp() -> lt.add_torrent_params:
     atp = lt.add_torrent_params()
-    for func in plugins.load_entry_points("tvaf.services.default_atp"):
+    for _, func in sorted(plugins.get("tvaf.services.default_atp").items()):
         await cast(Callable[[lt.add_torrent_params], Awaitable], func)(atp)
     return atp
 
 
 async def configure_atp(atp: lt.add_torrent_params) -> None:
-    for func in plugins.load_entry_points("tvaf.services.configure_atp"):
+    for _, func in sorted(plugins.get("tvaf.services.configure_atp").items()):
         await cast(Callable[[lt.add_torrent_params], Awaitable], func)(atp)
 
 
