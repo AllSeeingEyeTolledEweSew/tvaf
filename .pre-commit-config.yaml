@@ -32,7 +32,6 @@ repos:
   hooks:
     - id: mypy
       additional_dependencies:
-        - importlib_resources>=3.3.0
         - fastapi>=0.63.0
         - pydantic>=1.8
         - starlette>=0.12.0
@@ -40,6 +39,11 @@ repos:
         - python-libtorrent>=2.0.4
         - types-cachetools
         - types-requests
+        # keep this part in sync with tvaf/tests/test-requirements.txt
+        - importlib-resources>=3.3.0
+        - asgi-lifespan>=1.0.0,<2
+        - later>=20.2.1
+        - httpx>=0.13.0
 - repo: https://gitlab.com/pycqa/flake8.git
   rev: 3.9.2
   hooks:
