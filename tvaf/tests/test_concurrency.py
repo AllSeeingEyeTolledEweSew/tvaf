@@ -22,6 +22,8 @@ from later.unittest.backport import async_case
 
 from tvaf import concurrency
 
+from . import lib
+
 
 class DummyException(Exception):
     pass
@@ -218,3 +220,48 @@ class AcachedPropertyTest(async_case.IsolatedAsyncioTestCase):
         self.assertEqual(await first, "value")
         self.assertEqual(await second, "value")
         self.assertEqual(dummy.calls, 1)
+
+
+class AsCompletedTest(async_case.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        async def returner() -> int:
+            return 0
+
+        self.returner = returner()
+        self.forever = asyncio.get_event_loop().create_future()
+
+    async def test_cleanup(self) -> None:
+        async for future in concurrency.as_completed(
+            [self.forever, self.returner]
+        ):
+            self.assertEqual(await future, 0)
+            break
+
+        # Test that the forever-waiting future is eventually cancelled
+        for _ in lib.loop_until_timeout(10):
+            # NB: for the async generator to be cleaned up, it must be marked
+            # for cleanup by garbage collection, then __aexit__ is invoked by
+            # the event loop
+            await asyncio.sleep(0)
+            if self.forever.done():
+                break
+
+
+class AsCompletedCtxTest(async_case.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        async def returner() -> int:
+            return 0
+
+        self.returner = returner()
+        self.forever = asyncio.get_event_loop().create_future()
+
+    async def test_cleanup(self) -> None:
+        with concurrency.as_completed_ctx(
+            [self.forever, self.returner]
+        ) as iterator:
+            for future in iterator:
+                self.assertEqual(await future, 0)
+                break
+
+        # Test that the forever-waiting future was canceled immediately
+        self.assertTrue(self.forever.done())
