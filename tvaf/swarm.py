@@ -127,7 +127,7 @@ async def get_name_to_configure_swarm(
 
 async def _is_known_private(btmh: multihash.Multihash) -> bool:
     try:
-        return await torrent_info.get_is_private_from_cache(btmh)
+        return await torrent_info.is_private(btmh)
     except KeyError:
         return False
 

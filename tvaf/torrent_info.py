@@ -53,9 +53,9 @@ async def get_file_bounds_from_cache(
 
 
 @lifecycle.alru_cache(maxsize=256)
-async def get_is_private_from_cache(btmh: multihash.Multihash) -> bool:
+async def is_private(btmh: multihash.Multihash) -> bool:
     funcs = cast(
         Iterable[Callable[[multihash.Multihash], Awaitable[bool]]],
-        plugins.get("tvaf.torrent_info.get_is_private_from_cache").values(),
+        plugins.get("tvaf.torrent_info.is_private").values(),
     )
     return await _first_from_plugins([func(btmh) for func in funcs])

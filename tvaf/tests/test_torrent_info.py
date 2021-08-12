@@ -68,36 +68,28 @@ async def btmh_index_to_bounds(
     return BOUNDS
 
 
-class TestGetIsPrivateFromCache(TestWithPlugins):
+class TestIsPrivate(TestWithPlugins):
     async def test_no_plugins(self) -> None:
         with self.assertRaises(KeyError):
-            await torrent_info.get_is_private_from_cache(BTMH)
+            await torrent_info.is_private(BTMH)
 
     async def test_keyerror(self) -> None:
         self.fake_eps.add(
-            "keyerror",
-            btmh_to_keyerror,
-            "tvaf.torrent_info.get_is_private_from_cache",
+            "keyerror", btmh_to_keyerror, "tvaf.torrent_info.is_private"
         )
         with self.assertRaises(KeyError):
-            await torrent_info.get_is_private_from_cache(BTMH)
+            await torrent_info.is_private(BTMH)
 
     async def test_true(self) -> None:
-        self.fake_eps.add(
-            "true", btmh_to_true, "tvaf.torrent_info.get_is_private_from_cache"
-        )
-        self.assertTrue(await torrent_info.get_is_private_from_cache(BTMH))
+        self.fake_eps.add("true", btmh_to_true, "tvaf.torrent_info.is_private")
+        self.assertTrue(await torrent_info.is_private(BTMH))
 
     async def test_keyerror_and_true(self) -> None:
         self.fake_eps.add(
-            "keyerror",
-            btmh_to_keyerror,
-            "tvaf.torrent_info.get_is_private_from_cache",
+            "keyerror", btmh_to_keyerror, "tvaf.torrent_info.is_private"
         )
-        self.fake_eps.add(
-            "true", btmh_to_true, "tvaf.torrent_info.get_is_private_from_cache"
-        )
-        self.assertTrue(await torrent_info.get_is_private_from_cache(BTMH))
+        self.fake_eps.add("true", btmh_to_true, "tvaf.torrent_info.is_private")
+        self.assertTrue(await torrent_info.is_private(BTMH))
 
 
 class TestFileBoundsFromCache(TestWithPlugins):
