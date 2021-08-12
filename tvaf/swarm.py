@@ -39,13 +39,90 @@ faster downloads, but this will require modifications to libtorrent, and design
 input and opt-in from tracker administrators about how this would work.
 """
 
+import asyncio
+import contextlib
 from typing import Awaitable
 from typing import Callable
+from typing import cast
+from typing import Dict
+from typing import Mapping
 
 import libtorrent as lt
 
 from . import multihash
+from . import plugins
 from . import torrent_info
+
+ConfigureSwarm = Callable[[lt.add_torrent_params], Awaitable]
+"""Configures an add_torrent_params to connect to a swarm.
+
+A caller must set the info_hashes attribute before calling a ConfigureSwarms
+function. A ConfigureSwarm function may assume it is set, and use it as an
+argument to configure the specific torrent.
+
+A ConfigureSwarms should configure the add_torrent_params such that libtorrent
+will connect to a given swarm and obey the rules of that swarm.
+
+Therefore, a ConfigureSwarms function must either
+ * do nothing, in the case of the public swarm (the preset info_hashes is
+   sufficient to access the DHT), or
+ * set the ti attribute and/or others, such that libtorrent knows the torrent
+   is private, and configure tracker URLs.
+"""
+
+AccessSwarm = Callable[[multihash.Multihash], Awaitable[ConfigureSwarm]]
+"""Checks that a swarm can access the torrent, and returns a ConfigureSwarm.
+
+If the swarm cannot access the torrent, it must raise KeyError.
+
+An AccessSwarm function should do minimal work to determine if the swarm can
+access the torrent. If the plugin needs to fetch a resource (a .torrent file)
+to configure the torrent for access to the swarm, then this fetch should be
+done in the returned ConfigureSwarm function, not in the AccessSwarm function.
+"""
+
+
+def get_name_to_access_swarm() -> Mapping[str, AccessSwarm]:
+    """Retrieves all AccessSwarm functions from plugins.
+
+    AccessSwarm functions are registered as entry points, as described above.
+
+    Returns:
+        A mapping from swarm name to AccessSwarm functions.
+    """
+    return cast(
+        Mapping[str, AccessSwarm], plugins.get("tvaf.swarm.access_swarm")
+    )
+
+
+async def get_name_to_configure_swarm(
+    btmh: multihash.Multihash,
+) -> Mapping[str, ConfigureSwarm]:
+    """Retrieves all ConfigureSwarm functions from plugins.
+
+    This calls all registered AccessSwarm functions, returning a mapping from
+    swarm name to the resulting ConfigureSwarm functions.
+
+    If any AccessSwarm function raises KeyError, it will not be included in the
+    mapping.
+
+    Returns:
+        A mapping from swarm name to ConfigureSwarm functions.
+    """
+    # Runs all AccessSwarm functions in parallel
+    name_to_task = {
+        name: asyncio.create_task(access(btmh))
+        for name, access in get_name_to_access_swarm().items()
+    }
+    name_to_configure_swarm: Dict[str, ConfigureSwarm] = {}
+    try:
+        for name, task in name_to_task.items():
+            with contextlib.suppress(KeyError):
+                name_to_configure_swarm[name] = await task
+    finally:
+        for task in name_to_task.values():
+            task.cancel()
+    return name_to_configure_swarm
 
 
 async def _is_known_private(btmh: multihash.Multihash) -> bool:
@@ -55,14 +132,14 @@ async def _is_known_private(btmh: multihash.Multihash) -> bool:
         return False
 
 
-async def _configure_noop(atp: lt.add_torrent_params) -> None:
-    pass
+async def _configure_public(atp: lt.add_torrent_params) -> None:
+    assert not atp.info_hashes.get_best().is_all_zeros()
+    assert atp.ti is None or not atp.ti.priv()
+    # TODO: check trackers against known swarms
 
 
-async def _get_configure_public(
-    btmh: multihash.Multihash,
-) -> Callable[[lt.add_torrent_params], Awaitable[None]]:
+async def _access_public(btmh: multihash.Multihash) -> ConfigureSwarm:
     if await _is_known_private(btmh):
         raise KeyError(btmh)
 
-    return _configure_noop
+    return _configure_public

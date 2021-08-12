@@ -13,10 +13,6 @@
 
 import logging
 from typing import AsyncIterator
-from typing import Awaitable
-from typing import Callable
-from typing import cast
-from typing import Iterable
 from typing import Iterator
 from typing import Optional
 from typing import Sequence
@@ -36,8 +32,8 @@ from .. import byteranges
 from .. import concurrency
 from .. import ltpy
 from .. import multihash
-from .. import plugins
 from .. import services
+from .. import swarm
 from .. import torrent_info
 from .. import util
 from ..services import util as services_util
@@ -70,17 +66,6 @@ class NotModifiedResponse(starlette.responses.Response):
 
 
 _T = TypeVar("_T")
-
-
-async def _first_from_plugins(aws: Iterable[Awaitable[_T]]) -> _T:
-    # TODO: should we report unexpected exceptions from runners-up?
-    with concurrency.as_completed_ctx(aws) as iterator:
-        for future in iterator:
-            try:
-                return await future
-            except KeyError:
-                pass
-    raise KeyError()
 
 
 def _btmh_to_info_hashes(btmh: multihash.Multihash) -> lt.info_hash_t:
@@ -150,36 +135,28 @@ class _Helper:
             )
 
     @concurrency.acached_property
-    async def configure_swarms(
+    async def configure_swarm(
         self,
-    ) -> Callable[[lt.add_torrent_params], Awaitable]:
-        funcs = cast(
-            Iterable[
-                Callable[
-                    [multihash.Multihash],
-                    Awaitable[Callable[[lt.add_torrent_params], Awaitable]],
-                ]
-            ],
-            plugins.get("tvaf.swarm.get_configure_swarm").values(),
+    ) -> swarm.ConfigureSwarm:
+        name_to_configure_swarm = await swarm.get_name_to_configure_swarm(
+            self.btmh
         )
-        awaitables = [func(self.btmh) for func in funcs]
-        try:
-            return await _first_from_plugins(awaitables)
-        except KeyError:
+        if not name_to_configure_swarm:
             raise fastapi.HTTPException(
                 status_code=fastapi.status.HTTP_404_NOT_FOUND,
                 detail="unknown torrent",
             )
+        return list(name_to_configure_swarm.values())[0]
 
     @concurrency.acached_property
     async def valid_handle(self) -> lt.torrent_handle:
         existing = await self.existing_handle
         if existing.is_valid():
             return existing
-        configure_swarms = await self.configure_swarms
+        configure_swarm = await self.configure_swarm
         atp = await services.get_default_atp()
         atp.info_hashes = _btmh_to_info_hashes(self.btmh)
-        await configure_swarms(atp)
+        await configure_swarm(atp)
         await services.configure_atp(atp)
         atp.flags &= ~lt.torrent_flags.duplicate_is_error
         session = await services.get_session()
