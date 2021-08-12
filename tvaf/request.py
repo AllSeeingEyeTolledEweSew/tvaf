@@ -86,6 +86,7 @@ class _State:
         ] = collections.OrderedDict()
         self._readers: Dict[int, int] = {}
         self._prev_time_critical: Set[int] = set()
+        self._exc = asyncio.get_event_loop().create_future()
 
     def _delta_reads(self, prev: Set[int], cur: Set[int]) -> None:
         prioritize = False
@@ -158,7 +159,10 @@ class _State:
                     yield read.result()
                 else:
                     start = asyncio.get_event_loop().time()
-                    piece_data = await asyncio.shield(read)
+                    await concurrency.wait_first(
+                        (asyncio.shield(read), asyncio.shield(self._exc))
+                    )
+                    piece_data = read.result()
                     elapsed = asyncio.get_event_loop().time() - start
                     _LOG.debug(
                         "%s piece %d: waited %dms",
@@ -190,9 +194,10 @@ class _State:
         self._prev_time_critical = time_critical
 
     def set_exception(self, exc: BaseException):
-        for future in self._reads.values():
-            if not future.done():
-                future.set_exception(exc)
+        if not self._exc.done():
+            self._exc.set_exception(exc)
+            # Don't warn if exception was never retrieved
+            self._exc.exception()
 
     def handle_alert(self, alert: lt.torrent_alert) -> None:
         if isinstance(alert, lt.read_piece_alert):
