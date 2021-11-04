@@ -78,7 +78,7 @@ async def get_torrents() -> List[ltmodels.TorrentStatus]:
     return status_list
 
 
-@ROUTER.get("/session/btmh/{btmh}")
+@ROUTER.get("/torrents/{btmh}")
 async def status(btmh: multihash.Multihash) -> ltmodels.TorrentStatus:
     handle = await find_torrent(btmh)
     with translate_exceptions():
@@ -87,14 +87,14 @@ async def status(btmh: multihash.Multihash) -> ltmodels.TorrentStatus:
         )
 
 
-@ROUTER.get("/session/btmh/{btmh}/piece_priorities")
+@ROUTER.get("/torrents/{btmh}/piece_priorities")
 async def get_piece_priorities(btmh: multihash.Multihash) -> List[int]:
     handle = await find_torrent(btmh)
     with translate_exceptions():
         return await concurrency.to_thread(handle.get_piece_priorities)
 
 
-@ROUTER.delete("/session/btmh/{btmh}")
+@ROUTER.delete("/torrents/{btmh}")
 async def remove(btmh: multihash.Multihash) -> None:
     session = await services.get_session()
     handle = await find_torrent_in(session, btmh)

@@ -24,36 +24,36 @@ from . import lib
 class FormatTest(lib.AppTest, lib.TestCase):
     async def test_invalid_multihash(self) -> None:
         # not a valid multihash
-        r = await self.client.get("/v1/session/btmh/ffff")
+        r = await self.client.get("/v1/torrents/ffff")
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="invalid_multihash.json")
 
         # inconsistent sha1 length
-        r = await self.client.get("/v1/session/btmh/1114a0")
+        r = await self.client.get("/v1/torrents/1114a0")
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="short_sha1.json")
 
         # wrong sha1 length (110100) -- should this be 422?
 
         # odd-numbered hex digits
-        r = await self.client.get("/v1/session/btmh/a")
+        r = await self.client.get("/v1/torrents/a")
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="odd_hex_digits.json")
 
         # not hexadecimal
-        r = await self.client.get("/v1/session/btmh/not-hexadecimal")
+        r = await self.client.get("/v1/torrents/not-hexadecimal")
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="not_hexadecimal.json")
 
         # not sha1
-        r = await self.client.get("/v1/session/btmh/1201cd")
+        r = await self.client.get("/v1/torrents/1201cd")
         self.assertEqual(r.status_code, 404)
         self.assert_golden_json(r.json(), suffix="not_sha1.json")
 
 
 class StatusTest(lib.AppTestWithTorrent, lib.TestCase):
     async def test_get(self) -> None:
-        r = await self.client.get(f"/v1/session/btmh/{self.torrent.btmh}")
+        r = await self.client.get(f"/v1/torrents/{self.torrent.btmh}")
         self.assertEqual(r.status_code, 200)
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
 
@@ -69,7 +69,7 @@ class StatusTest(lib.AppTestWithTorrent, lib.TestCase):
 class GetPiecePrioritiesTest(lib.AppTestWithTorrent, lib.TestCase):
     async def test_get(self) -> None:
         r = await self.client.get(
-            f"/v1/session/btmh/{self.torrent.btmh}/piece_priorities"
+            f"/v1/torrents/{self.torrent.btmh}/piece_priorities"
         )
         self.assertEqual(r.status_code, 200)
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
@@ -78,7 +78,7 @@ class GetPiecePrioritiesTest(lib.AppTestWithTorrent, lib.TestCase):
 
 class RemoveTest(lib.AppTestWithTorrent, lib.TestCase):
     async def test_delete(self) -> None:
-        r = await self.client.delete(f"/v1/session/btmh/{self.torrent.btmh}")
+        r = await self.client.delete(f"/v1/torrents/{self.torrent.btmh}")
         self.assertEqual(r.status_code, 200)
         self.assertFalse(
             await concurrency.to_thread(
