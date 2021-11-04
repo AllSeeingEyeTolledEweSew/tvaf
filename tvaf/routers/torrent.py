@@ -11,6 +11,7 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+import asyncio
 import contextlib
 import logging
 from typing import Iterator
@@ -55,6 +56,26 @@ def translate_exceptions() -> Iterator[None]:
         raise fastapi.HTTPException(
             status_code=fastapi.status.HTTP_404_NOT_FOUND
         )
+
+
+@ROUTER.get("/torrents")
+async def get_torrents() -> List[ltmodels.TorrentStatus]:
+    session = await services.get_session()
+    with ltpy.translate_exceptions():
+        handles = await concurrency.to_thread(session.get_torrents)
+    status_list: List[ltmodels.TorrentStatus] = []
+    aws = [concurrency.to_thread(h.status, flags=0x7FFFFFFF) for h in handles]
+    tasks = [asyncio.create_task(aw) for aw in aws]
+    try:
+        for task in tasks:
+            with contextlib.suppress(ltpy.InvalidTorrentHandleError):
+                with ltpy.translate_exceptions():
+                    status = ltmodels.TorrentStatus.from_orm(await task)
+                status_list.append(status)
+    finally:
+        for task in tasks:
+            task.cancel()
+    return status_list
 
 
 @ROUTER.get("/session/btmh/{btmh}")

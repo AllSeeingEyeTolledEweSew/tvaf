@@ -87,3 +87,18 @@ class RemoveTest(lib.AppTestWithTorrent, lib.TestCase):
                 await services.get_session(),
             )
         )
+
+
+class TorrentListTest(lib.AppTestWithTorrent, lib.TestCase):
+    async def test_torrent_list(self) -> None:
+        r = await self.client.get("/v1/torrents")
+        self.assertEqual(r.status_code, 200)
+        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+
+        statuses = r.json()
+        # test unstable parts
+        self.assertIsInstance(statuses[0].pop("added_time"), int)
+        self.assertIsInstance(statuses[0].pop("completed_time"), int)
+        datetime.datetime.fromisoformat(statuses[0].pop("last_download"))
+        self.assertEqual(statuses[0].pop("save_path"), self.tempdir.name)
+        self.assert_golden_json(statuses, suffix="body.json")
