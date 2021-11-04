@@ -28,6 +28,7 @@ import sys
 import tempfile
 import time
 from typing import Any
+from typing import cast
 from typing import Dict
 from typing import Iterable
 from typing import Iterator
@@ -117,9 +118,9 @@ class TestCase(unittest.TestCase):
 
     def get_data(self, suffix: str) -> str:
         """Returns golden reference data for this test."""
-        return importlib_resources.read_text(
-            "tvaf.tests.data", f"{self.id()}.{suffix}"
-        )
+        files = importlib_resources.files("tvaf.tests.data")
+        resource = files / f"{self.id()}.{suffix}"
+        return cast(str, resource.read_text())
 
     def assert_golden(self, value: str, suffix: str = "golden.txt") -> None:
         """Asserts a value is equal to golden data, or update the golden data.
