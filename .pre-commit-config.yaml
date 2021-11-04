@@ -36,7 +36,7 @@ repos:
         - pydantic>=1.8
         - starlette>=0.12.0
         - httpx>=0.18.0,<0.19
-        - python-libtorrent>=2.0.4
+        - libtorrent>=2.0.4
         - types-cachetools
         - types-requests
         # keep this part in sync with tvaf/tests/test-requirements.txt
