@@ -20,7 +20,7 @@ from . import lib
 
 class GetTest(lib.AppTest, lib.TestCase):
     async def test_get(self) -> None:
-        r = await self.client.get("/v1/config")
+        r = await self.client.get("/config")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json(), await services.get_config())
 
@@ -29,6 +29,6 @@ class PostTest(lib.AppTest, lib.TestCase):
     async def test_get(self) -> None:
         config = config_lib.Config(await services.get_config())
         config["test"] = "test"
-        r = await self.client.post("/v1/config", json=config)
+        r = await self.client.post("/config", json=config)
         self.assertEqual(r.status_code, 200)
         self.assertEqual((await services.get_config())["test"], "test")

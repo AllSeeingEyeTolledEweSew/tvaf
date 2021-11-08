@@ -26,7 +26,7 @@ from .. import ltpy
 from .. import multihash
 from .. import services
 
-ROUTER = fastapi.APIRouter(prefix="/v1", tags=["torrent status"])
+ROUTER = fastapi.APIRouter(prefix="/torrents", tags=["torrent status"])
 
 _LOG = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ def translate_exceptions() -> Iterator[None]:
         )
 
 
-@ROUTER.get("/torrents")
+@ROUTER.get("/")
 async def get_torrents() -> List[ltmodels.TorrentStatus]:
     session = await services.get_session()
     with ltpy.translate_exceptions():
@@ -78,7 +78,7 @@ async def get_torrents() -> List[ltmodels.TorrentStatus]:
     return status_list
 
 
-@ROUTER.get("/torrents/{btmh}")
+@ROUTER.get("/{btmh}")
 async def status(btmh: multihash.Multihash) -> ltmodels.TorrentStatus:
     handle = await find_torrent(btmh)
     with translate_exceptions():
@@ -87,14 +87,14 @@ async def status(btmh: multihash.Multihash) -> ltmodels.TorrentStatus:
         )
 
 
-@ROUTER.get("/torrents/{btmh}/piece_priorities")
+@ROUTER.get("/{btmh}/piece_priorities")
 async def get_piece_priorities(btmh: multihash.Multihash) -> List[int]:
     handle = await find_torrent(btmh)
     with translate_exceptions():
         return await concurrency.to_thread(handle.get_piece_priorities)
 
 
-@ROUTER.delete("/torrents/{btmh}")
+@ROUTER.delete("/{btmh}")
 async def remove(btmh: multihash.Multihash) -> None:
     session = await services.get_session()
     handle = await find_torrent_in(session, btmh)

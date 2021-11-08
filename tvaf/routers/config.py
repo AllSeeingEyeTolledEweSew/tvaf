@@ -21,16 +21,16 @@ import starlette.responses
 from .. import config as config_lib
 from .. import services
 
-ROUTER = fastapi.APIRouter(prefix="/v1", tags=["server config"])
+ROUTER = fastapi.APIRouter(prefix="/config", tags=["server config"])
 
 _LOG = logging.getLogger(__name__)
 
 
-@ROUTER.get("/config", response_class=starlette.responses.JSONResponse)
+@ROUTER.get("/", response_class=starlette.responses.JSONResponse)
 async def get() -> config_lib.Config:
     return await services.get_config()
 
 
-@ROUTER.post("/config")
+@ROUTER.post("/")
 async def post(config: Dict[str, Any]) -> None:
     await services.set_config(config_lib.Config(config))

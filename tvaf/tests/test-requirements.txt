@@ -1,4 +1,4 @@
 importlib-resources>=3.3.0
 asgi-lifespan>=1.0.0,<2
 later>=20.2.1
-httpx>=0.13.0
+httpx>=0.20.0,<0.21

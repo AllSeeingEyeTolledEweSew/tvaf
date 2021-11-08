@@ -38,7 +38,7 @@ from .. import torrent_info
 from .. import util
 from ..services import util as services_util
 
-ROUTER = fastapi.APIRouter(prefix="/v1", tags=["data access"])
+ROUTER = fastapi.APIRouter(prefix="/data", tags=["data access"])
 
 _LOG = logging.getLogger(__name__)
 

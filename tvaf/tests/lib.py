@@ -290,7 +290,7 @@ class AppTest(async_case.IsolatedAsyncioTestCase):
         )
         await self.lifespan_manager.__aenter__()
         self.client = httpx.AsyncClient(
-            app=app_lib.APP, base_url="http://test"
+            app=app_lib.APP, base_url="http://test", follow_redirects=True
         )
 
     async def asyncTearDown(self) -> None:
