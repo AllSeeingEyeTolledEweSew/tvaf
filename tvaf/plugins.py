@@ -14,11 +14,14 @@
 
 import sys
 from typing import Any
+from typing import Callable
 from typing import cast
 from typing import Dict
+from typing import Generic
 from typing import Iterable
 from typing import Mapping
 from typing import Tuple
+from typing import TypeVar
 import warnings
 
 from . import lifecycle
@@ -59,3 +62,32 @@ def get(group_name: str) -> Mapping[str, Any]:
             )
         name_to_entry_point[name] = entry_point
     return {name: ep.load() for name, ep in name_to_entry_point.items()}
+
+
+_T = TypeVar("_T")
+
+
+class Group(Generic[_T]):
+    def __init__(self, group_name: str) -> None:
+        self.group_name = group_name
+
+    def get(self) -> Mapping[str, _T]:
+        return get(self.group_name)
+
+
+_C = TypeVar("_C", bound=Callable)
+
+
+class Funcs(Group[_C]):
+    def decorator(self, name: str) -> Callable[[_C], _C]:
+        def wrap(func: _C) -> _C:
+            value = f"{func.__module__}:{func.__qualname__}"
+            for entry_point in _select_eps_group(self.group_name):
+                if entry_point.name == name:
+                    assert entry_point.value == value
+                    break
+            else:
+                raise AssertionError(f"[{self.group_name} - {name}] not found")
+            return func
+
+        return wrap

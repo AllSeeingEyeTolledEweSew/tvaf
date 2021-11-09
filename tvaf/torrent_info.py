@@ -13,7 +13,6 @@
 
 from typing import Awaitable
 from typing import Callable
-from typing import cast
 from typing import Iterable
 from typing import Tuple
 from typing import TypeVar
@@ -38,21 +37,29 @@ async def _first_from_plugins(aws: Iterable[Awaitable[_T]]) -> _T:
     raise KeyError()
 
 
+GetFileBoundsFromCache = Callable[[lt.info_hash_t, int], Awaitable[Tuple[int, int]]]
+_GET_FILE_BOUNDS_FROM_CACHE_FUNCS: plugins.Funcs[
+    GetFileBoundsFromCache
+] = plugins.Funcs("tvaf.torrent_info.get_file_bounds_from_cache")
+get_file_bounds_from_cache_plugin = _GET_FILE_BOUNDS_FROM_CACHE_FUNCS.decorator
+
+
 @lifecycle.alru_cache(maxsize=256)
 async def get_file_bounds_from_cache(
     info_hashes: lt.info_hash_t, file_index: int
 ) -> Tuple[int, int]:
-    funcs = cast(
-        Iterable[Callable[[lt.info_hash_t, int], Awaitable[Tuple[int, int]]]],
-        plugins.get("tvaf.torrent_info.get_file_bounds_from_cache").values(),
-    )
+    funcs = _GET_FILE_BOUNDS_FROM_CACHE_FUNCS.get().values()
     return await _first_from_plugins([func(info_hashes, file_index) for func in funcs])
+
+
+IsPrivate = Callable[[lt.info_hash_t], Awaitable[bool]]
+_IS_PRIVATE_FUNCS: plugins.Funcs[IsPrivate] = plugins.Funcs(
+    "tvaf.torrent_info.is_private"
+)
+is_private_plugin = _IS_PRIVATE_FUNCS.decorator
 
 
 @lifecycle.alru_cache(maxsize=256)
 async def is_private(info_hashes: lt.info_hash_t) -> bool:
-    funcs = cast(
-        Iterable[Callable[[lt.info_hash_t], Awaitable[bool]]],
-        plugins.get("tvaf.torrent_info.is_private").values(),
-    )
+    funcs = _IS_PRIVATE_FUNCS.get().values()
     return await _first_from_plugins([func(info_hashes) for func in funcs])

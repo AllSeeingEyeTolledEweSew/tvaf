@@ -21,9 +21,7 @@ from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
-from typing import cast
 from typing import Dict
-from typing import Iterable
 
 import libtorrent as lt
 
@@ -43,21 +41,35 @@ RESUME_DATA_PATH = pathlib.Path("resume")
 DEFAULT_DOWNLOAD_PATH = pathlib.Path("download")
 
 
+Startup = Callable[[], Awaitable]
+_STARTUP_FUNCS: plugins.Funcs[Startup] = plugins.Funcs("tvaf.services.startup")
+startup_plugin = _STARTUP_FUNCS.decorator
+
+
 async def startup() -> None:
-    for _, func in sorted(plugins.get("tvaf.services.startup").items()):
-        await cast(Callable[[], Awaitable], func)()
+    for _, func in sorted(_STARTUP_FUNCS.get().items()):
+        await func()
+
+
+Shutdown = Callable[[], Awaitable]
+_SHUTDOWN_FUNCS: plugins.Funcs[Shutdown] = plugins.Funcs("tvaf.services.shutdown")
+shutdown_plugin = _SHUTDOWN_FUNCS.decorator
 
 
 async def shutdown() -> None:
-    for _, func in sorted(plugins.get("tvaf.services.shutdown").items()):
-        await cast(Callable[[], Awaitable], func)()
+    for _, func in sorted(_SHUTDOWN_FUNCS.get().items()):
+        await func()
+
+
+StageConfig = Callable[[config_lib.Config], AsyncContextManager]
+_STAGE_CONFIG_FUNCS: plugins.Funcs[StageConfig] = plugins.Funcs(
+    "tvaf.services.stage_config"
+)
+stage_config_plugin = _STAGE_CONFIG_FUNCS.decorator
 
 
 def stage_config(config: config_lib.Config) -> AsyncContextManager[None]:
-    stages = cast(
-        Iterable[Callable[[config_lib.Config], AsyncContextManager[None]]],
-        plugins.get("tvaf.services.stage_config").values(),
-    )
+    stages = [func for _, func in sorted(_STAGE_CONFIG_FUNCS.get().items())]
     return config_lib.stage_config(config, *stages)
 
 
@@ -67,16 +79,30 @@ async def set_config(config: config_lib.Config):
     _LOG.info("config: updated")
 
 
+DefaultATP = Callable[[lt.add_torrent_params], Awaitable]
+_DEFAULT_ATP_FUNCS: plugins.Funcs[DefaultATP] = plugins.Funcs(
+    "tvaf.services.default_atp"
+)
+default_atp_plugin = _DEFAULT_ATP_FUNCS.decorator
+
+
 async def get_default_atp() -> lt.add_torrent_params:
     atp = lt.add_torrent_params()
-    for _, func in sorted(plugins.get("tvaf.services.default_atp").items()):
-        await cast(Callable[[lt.add_torrent_params], Awaitable], func)(atp)
+    for _, func in sorted(_DEFAULT_ATP_FUNCS.get().items()):
+        await func(atp)
     return atp
 
 
+ConfigureATP = Callable[[lt.add_torrent_params], Awaitable]
+_CONFIGURE_ATP_FUNCS: plugins.Funcs[ConfigureATP] = plugins.Funcs(
+    "tvaf.services.configure_atp"
+)
+configure_atp_plugin = _CONFIGURE_ATP_FUNCS.decorator
+
+
 async def configure_atp(atp: lt.add_torrent_params) -> None:
-    for _, func in sorted(plugins.get("tvaf.services.configure_atp").items()):
-        await cast(Callable[[lt.add_torrent_params], Awaitable], func)(atp)
+    for _, func in sorted(_CONFIGURE_ATP_FUNCS.get().items()):
+        await func(atp)
 
 
 _process_locked = False
@@ -125,10 +151,12 @@ async def get_request_service() -> request_lib.RequestService:
 _config_lock = asyncio.Lock()
 
 
+@stage_config_plugin("00_lock")
 def _stage_config_lock(_: config_lib.Config) -> AsyncContextManager:
     return _config_lock
 
 
+@stage_config_plugin("80_disk")
 @contextlib.asynccontextmanager
 async def _stage_config_disk(config: config_lib.Config) -> AsyncIterator[None]:
     tmp_path = CONFIG_PATH.with_suffix(".tmp")
@@ -150,6 +178,7 @@ async def _stage_config_disk(config: config_lib.Config) -> AsyncIterator[None]:
             _LOG.exception("can't unlink temp file %s", tmp_path)
 
 
+@stage_config_plugin("90_global")
 @contextlib.asynccontextmanager
 async def _stage_config_global(
     config: config_lib.Config,
@@ -158,6 +187,7 @@ async def _stage_config_global(
     get_config.cache_clear()
 
 
+@stage_config_plugin("50_session")
 @contextlib.asynccontextmanager
 async def _stage_config_session_service(
     config: config_lib.Config,
@@ -167,6 +197,7 @@ async def _stage_config_session_service(
         yield
 
 
+@startup_plugin("00_process")
 async def _lock_process() -> None:
     global _process_locked
     _LOG.debug("startup: acquiring process lock")
@@ -175,6 +206,7 @@ async def _lock_process() -> None:
     _process_locked = True
 
 
+@shutdown_plugin("99_process")
 async def _unlock_process() -> None:
     global _process_locked
     assert _process_locked
@@ -182,18 +214,22 @@ async def _unlock_process() -> None:
     _process_locked = False
 
 
+@startup_plugin("20_alert")
 async def _startup_alert_driver() -> None:
     (await get_alert_driver()).start()
 
 
+@startup_plugin("20_resume")
 async def _startup_resume_service() -> None:
     (await get_resume_service()).start()
 
 
+@startup_plugin("20_request")
 async def _startup_request_service() -> None:
     (await get_request_service()).start()
 
 
+@startup_plugin("30_load")
 async def _load_resume_data() -> None:
     # Load resume data
     session = await get_session()
@@ -203,12 +239,14 @@ async def _load_resume_data() -> None:
         session.async_add_torrent(atp)
 
 
+@shutdown_plugin("60_request")
 async def _shutdown_drain_requests() -> None:
     request_service = await get_request_service()
     request_service.close()
     await request_service.wait_closed()
 
 
+@shutdown_plugin("70_session")
 async def _shutdown_pause_session() -> None:
     session = await get_session()
     _LOG.info("shutdown: pausing libtorrent session")
@@ -216,12 +254,14 @@ async def _shutdown_pause_session() -> None:
     session.pause()
 
 
+@shutdown_plugin("80_resume")
 async def _shutdown_save_resume_data() -> None:
     resume_service = await get_resume_service()
     resume_service.close()
     await resume_service.wait_closed()
 
 
+@shutdown_plugin("90_alerts")
 async def _shutdown_drain_alerts() -> None:
     # Wait for alert consumers to finish
     alert_driver = await get_alert_driver()
@@ -229,6 +269,7 @@ async def _shutdown_drain_alerts() -> None:
     await alert_driver.wait_closed()
 
 
+@shutdown_plugin("98_clear")
 async def _shutdown_clear_caches() -> None:
     lifecycle.clear()
 
@@ -280,11 +321,13 @@ async def _get_atp_defaults() -> Dict[str, Any]:
     return await _get_atp_defaults_from_config(await get_config())
 
 
+@startup_plugin("10_default_atp")
 async def _startup_config_default_atp() -> None:
     # Parse existing config
     await _get_atp_defaults()
 
 
+@stage_config_plugin("50_default_atp")
 @contextlib.asynccontextmanager
 async def _stage_config_default_atp(
     config: config_lib.Config,
@@ -294,6 +337,7 @@ async def _stage_config_default_atp(
     _get_atp_defaults.cache_clear()
 
 
+@default_atp_plugin("50_config")
 async def _default_atp_from_config(atp: lt.add_torrent_params) -> None:
     defaults = await _get_atp_defaults()
     for key, value in defaults.items():

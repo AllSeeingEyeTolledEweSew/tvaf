@@ -43,7 +43,6 @@ import asyncio
 import contextlib
 from typing import Awaitable
 from typing import Callable
-from typing import cast
 from typing import Dict
 from typing import Mapping
 
@@ -80,16 +79,37 @@ to configure the torrent for access to the swarm, then this fetch should be
 done in the returned ConfigureSwarm function, not in the AccessSwarm function.
 """
 
+_ACCESS_SWARM_FUNCS: plugins.Funcs[AccessSwarm] = plugins.Funcs(
+    "tvaf.swarm.access_swarm"
+)
 
-def get_name_to_access_swarm() -> Mapping[str, AccessSwarm]:
-    """Retrieves all AccessSwarm functions from plugins.
 
-    AccessSwarm functions are registered as entry points, as described above.
+get_name_to_access_swarm = _ACCESS_SWARM_FUNCS.get
+"""Retrieves all AccessSwarm functions from plugins.
 
-    Returns:
-        A mapping from swarm name to AccessSwarm functions.
-    """
-    return cast(Mapping[str, AccessSwarm], plugins.get("tvaf.swarm.access_swarm"))
+AccessSwarm functions are registered as entry points, as described above.
+
+Returns:
+    A mapping from swarm name to AccessSwarm functions.
+"""
+
+access_swarm_plugin = _ACCESS_SWARM_FUNCS.decorator
+"""Decorator for swarm access functions.
+
+The decorator returns the plugin function unmodified.
+
+The decorator's type signature enforces the signature of the target plugin
+function.
+
+At import time, the decorator checks that the target function is listed as an
+entry point having group "tvaf.swarm.access_swarm" and the given name.
+
+Args:
+    name: An entry point name to validate.
+
+Returns:
+    A pass-through decorator function.
+"""
 
 
 async def get_name_to_configure_swarm(
@@ -135,6 +155,7 @@ async def _configure_public(atp: lt.add_torrent_params) -> None:
     # TODO: check trackers against known swarms
 
 
+@access_swarm_plugin("public")
 async def _access_public(info_hashes: lt.info_hash_t) -> ConfigureSwarm:
     if await _is_known_private(info_hashes):
         raise KeyError(info_hashes)
