@@ -45,9 +45,7 @@ class ToThreadTest(async_case.IsolatedAsyncioTestCase):
             await concurrency.to_thread(raise_dummy)
 
     async def test_pass_args(self) -> None:
-        def return_my_args(
-            *args: Any, **kwargs: Any
-        ) -> Tuple[Tuple, Dict[str, Any]]:
+        def return_my_args(*args: Any, **kwargs: Any) -> Tuple[Tuple, Dict[str, Any]]:
             return (args, kwargs)
 
         (args, kwargs) = await concurrency.to_thread(
@@ -126,9 +124,7 @@ class WaitFirstTest(async_case.IsolatedAsyncioTestCase):
 
         forever = asyncio.get_event_loop().create_future()
         with self.assertRaises(DummyException):
-            await asyncio.wait_for(
-                concurrency.wait_first((raise_dummy(), forever)), 5
-            )
+            await asyncio.wait_for(concurrency.wait_first((raise_dummy(), forever)), 5)
         self.assertTrue(forever.done())
         self.assertTrue(forever.cancelled())
 
@@ -231,9 +227,7 @@ class AsCompletedTest(async_case.IsolatedAsyncioTestCase):
         self.forever = asyncio.get_event_loop().create_future()
 
     async def test_cleanup(self) -> None:
-        async for future in concurrency.as_completed(
-            [self.forever, self.returner]
-        ):
+        async for future in concurrency.as_completed([self.forever, self.returner]):
             self.assertEqual(await future, 0)
             break
 
@@ -256,9 +250,7 @@ class AsCompletedCtxTest(async_case.IsolatedAsyncioTestCase):
         self.forever = asyncio.get_event_loop().create_future()
 
     async def test_cleanup(self) -> None:
-        with concurrency.as_completed_ctx(
-            [self.forever, self.returner]
-        ) as iterator:
+        with concurrency.as_completed_ctx([self.forever, self.returner]) as iterator:
             for future in iterator:
                 self.assertEqual(await future, 0)
                 break

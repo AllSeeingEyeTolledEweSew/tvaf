@@ -214,17 +214,13 @@ class AlertDriver:
         with ltpy.translate_exceptions():
             # Does not block (I think)
             self._alerts = self._session.pop_alerts()
-        self._alert_to_index = {
-            alert: i for i, alert in enumerate(self._alerts)
-        }
+        self._alert_to_index = {alert: i for i, alert in enumerate(self._alerts)}
 
         for alert in self._alerts:
             log_alert(alert)
 
         # Feed alerts to their iterators
-        iter_alerts: Dict[_Iterator, List[lt.alert]] = collections.defaultdict(
-            list
-        )
+        iter_alerts: Dict[_Iterator, List[lt.alert]] = collections.defaultdict(list)
         for alert in self._alerts:
             lookup_types = (alert.__class__, None)
             lookup_handles: Collection[Optional[lt.torrent_handle]]

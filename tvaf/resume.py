@@ -84,9 +84,7 @@ async def iter_resume_data_from_disk(
     dir_path = pathlib.Path(dir_path)
     if not await concurrency.to_thread(dir_path.is_dir):
         return
-    async for path in concurrency.iter_in_thread(
-        dir_path.iterdir(), batch_size=100
-    ):
+    async for path in concurrency.iter_in_thread(dir_path.iterdir(), batch_size=100):
         if path.suffixes != [".resume"]:
             continue
         if not re.match(r"[0-9a-f]{40}", path.stem):
@@ -268,9 +266,7 @@ class ResumeService:
             # or current params.
             self._save_atp(alert.params, alert.handle, ignore_if_exists=True)
         elif isinstance(alert, lt.torrent_removed_alert):
-            self._schedule_write(
-                alert.info_hash, self._delete, alert.info_hash
-            )
+            self._schedule_write(alert.info_hash, self._delete, alert.info_hash)
         elif isinstance(alert, lt.metadata_received_alert):
             handle = alert.handle
 
@@ -300,9 +296,7 @@ class ResumeService:
                 lt.storage_moved_alert,
             ),
         ):
-            self._safe_save(
-                alert.handle, flags=lt.save_resume_flags_t.only_if_modified
-            )
+            self._safe_save(alert.handle, flags=lt.save_resume_flags_t.only_if_modified)
 
     def _safe_save(self, handle: lt.torrent_handle, flags: int = None) -> None:
         with contextlib.suppress(ltpy.InvalidTorrentHandleError):
@@ -380,16 +374,12 @@ class ResumeService:
             await asyncio.sleep(1)
 
         # final save
-        await self._save_all_if_modified(
-            flags=lt.save_resume_flags_t.flush_disk_cache
-        )
+        await self._save_all_if_modified(flags=lt.save_resume_flags_t.flush_disk_cache)
 
         _LOG.info("shutdown: waiting for final resume data")
         while True:
             self._got_alert.clear()
-            await concurrency.wait_first(
-                [self._got_alert.wait(), asyncio.sleep(1)]
-            )
+            await concurrency.wait_first([self._got_alert.wait(), asyncio.sleep(1)])
             if not self._got_alert.is_set():
                 break
 
@@ -424,8 +414,7 @@ class ResumeService:
             handles = await concurrency.to_thread(self._session.get_torrents)
         # Dispatch need_save_resume_data() all at once
         dispatch = [
-            (h, concurrency.to_thread(h.need_save_resume_data))
-            for h in handles
+            (h, concurrency.to_thread(h.need_save_resume_data)) for h in handles
         ]
         # We don't use save_resume_data(flags=only_if_modified), to avoid
         # overloading the alert queue

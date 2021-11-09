@@ -30,9 +30,7 @@ ROUTER = fastapi.APIRouter(prefix="/torrents", tags=["torrent status"])
 _LOG = logging.getLogger(__name__)
 
 
-async def find_torrent_in(
-    session: lt.session, info_hash: bytes
-) -> lt.torrent_handle:
+async def find_torrent_in(session: lt.session, info_hash: bytes) -> lt.torrent_handle:
     best = ltmodels.info_hashes_from_digest(info_hash).get_best()
     return await concurrency.to_thread(session.find_torrent, best)
 
@@ -48,9 +46,7 @@ def translate_exceptions() -> Iterator[None]:
         with ltpy.translate_exceptions():
             yield
     except ltpy.InvalidTorrentHandleError:
-        raise fastapi.HTTPException(
-            status_code=fastapi.status.HTTP_404_NOT_FOUND
-        )
+        raise fastapi.HTTPException(status_code=fastapi.status.HTTP_404_NOT_FOUND)
 
 
 @ROUTER.get("/")

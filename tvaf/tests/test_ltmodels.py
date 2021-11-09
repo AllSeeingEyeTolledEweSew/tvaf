@@ -87,13 +87,9 @@ class Sha256HashTest(unittest.TestCase):
 
 class InfoHashesTest(unittest.TestCase):
     def test_from_orm(self) -> None:
-        ih = lt.info_hash_t(
-            lt.sha1_hash(b"\xaa" * 20), lt.sha256_hash(b"\xbb" * 32)
-        )
+        ih = lt.info_hash_t(lt.sha1_hash(b"\xaa" * 20), lt.sha256_hash(b"\xbb" * 32))
         info_hashes = ltmodels.InfoHashes.from_orm(ih)
-        self.assertEqual(
-            info_hashes, ltmodels.InfoHashes(v1="aa" * 20, v2="bb" * 32)
-        )
+        self.assertEqual(info_hashes, ltmodels.InfoHashes(v1="aa" * 20, v2="bb" * 32))
 
     def test_from_orm_v1(self) -> None:
         ih = lt.info_hash_t(lt.sha1_hash(b"\xaa" * 20))

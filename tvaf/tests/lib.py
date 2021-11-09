@@ -80,9 +80,7 @@ def create_isolated_session_service(
     )
 
 
-def loop_until_timeout(
-    timeout: float, msg: str = "condition"
-) -> Iterator[None]:
+def loop_until_timeout(timeout: float, msg: str = "condition") -> Iterator[None]:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         yield
@@ -112,9 +110,7 @@ class TestCase(unittest.TestCase):
         # that are assumed to be individually accessible on the filesystem. So
         # for updating golden data, we use the "naive" approach of referencing
         # a file based off of the __file__ path.
-        return os.path.join(
-            os.path.dirname(__file__), "data", f"{self.id()}.{suffix}"
-        )
+        return os.path.join(os.path.dirname(__file__), "data", f"{self.id()}.{suffix}")
 
     def get_data(self, suffix: str) -> str:
         """Returns golden reference data for this test."""
@@ -177,9 +173,9 @@ class TestCase(unittest.TestCase):
 
 class _FakeDistribution(importlib_metadata.Distribution):
     def __init__(self) -> None:
-        self._entry_points: Dict[
-            str, List[Tuple[str, str]]
-        ] = collections.defaultdict(list)
+        self._entry_points: Dict[str, List[Tuple[str, str]]] = collections.defaultdict(
+            list
+        )
         # Some amount of metadata is expected. In particular,
         # importlib_metadata de-duplicates distributions by name, for some
         # cases
@@ -267,9 +263,7 @@ class EntryPointFaker:
                 value = f"{__name__}:{global_name}"
                 if self._enabled:
                     this_module = importlib.import_module(__name__)
-                    setattr(
-                        this_module, global_name, self._globals[global_name]
-                    )
+                    setattr(this_module, global_name, self._globals[global_name])
             else:
                 value = f"{value.__module__}:{qualname}"
         if not isinstance(group, str):

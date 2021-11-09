@@ -40,9 +40,7 @@ class _LRUCacheWrapper(Generic[_C]):
 
 def lru_cache(*, maxsize: int) -> Callable[[_C], _LRUCacheWrapper[_C]]:
     def wrapper(func: _C) -> _LRUCacheWrapper[_C]:
-        wrapped = cast(
-            _LRUCacheWrapper[_C], functools.lru_cache(maxsize=maxsize)(func)
-        )
+        wrapped = cast(_LRUCacheWrapper[_C], functools.lru_cache(maxsize=maxsize)(func))
         add_clear_callback(wrapped.cache_clear)
         return wrapped
 

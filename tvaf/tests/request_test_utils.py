@@ -31,9 +31,7 @@ class RequestServiceTestCase(async_case.IsolatedAsyncioTestCase):
 
         self.session_service = lib.create_isolated_session_service()
         self.session = self.session_service.session
-        self.alert_driver = driver_lib.AlertDriver(
-            session_service=self.session_service
-        )
+        self.alert_driver = driver_lib.AlertDriver(session_service=self.session_service)
         self.service = request_lib.RequestService(
             alert_driver=self.alert_driver,
             session=self.session,
@@ -44,9 +42,7 @@ class RequestServiceTestCase(async_case.IsolatedAsyncioTestCase):
 
         atp = self.torrent.atp()
         atp.save_path = self.tempdir.name
-        self.handle = await concurrency.to_thread(
-            self.session.add_torrent, atp
-        )
+        self.handle = await concurrency.to_thread(self.session.add_torrent, atp)
         self.all_pieces = range(len(self.torrent.pieces))
 
     async def asyncTearDown(self) -> None:

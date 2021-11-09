@@ -72,9 +72,7 @@ class IterResumeDataTest(async_case.IsolatedAsyncioTestCase):
 
         def write(torrent: tdummy.Torrent) -> None:
             self.path.mkdir(parents=True, exist_ok=True)
-            path = self.path.joinpath(str(torrent.sha1_hash)).with_suffix(
-                ".resume"
-            )
+            path = self.path.joinpath(str(torrent.sha1_hash)).with_suffix(".resume")
             atp = torrent.atp()
             atp.ti = None
             atp_data = lt.bencode(lt.write_resume_data(atp))
@@ -114,9 +112,7 @@ class IterResumeDataTest(async_case.IsolatedAsyncioTestCase):
         self.tempdir.cleanup()
 
     async def test_normal(self) -> None:
-        atps = await concurrency.alist(
-            resume_lib.iter_resume_data_from_disk(self.path)
-        )
+        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
         self.assert_atp_sets_equal(
             set(atps), {self.TORRENT1.atp(), self.TORRENT2.atp()}
         )
@@ -144,9 +140,7 @@ class IterResumeDataTest(async_case.IsolatedAsyncioTestCase):
         path = self.path.joinpath("02" * 20).with_suffix(".resume")
         path.symlink_to("does_not_exist.resume")
 
-        atps = await concurrency.alist(
-            resume_lib.iter_resume_data_from_disk(self.path)
-        )
+        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
         self.assert_atp_sets_equal(
             set(atps), {self.TORRENT1.atp(), self.TORRENT2.atp()}
         )
@@ -159,9 +153,7 @@ class TerminateTest(async_case.IsolatedAsyncioTestCase):
         self.torrent = tdummy.DEFAULT
         self.tempdir = tempfile.TemporaryDirectory()
         self.path = pathlib.Path(self.tempdir.name)
-        self.alert_driver = driver_lib.AlertDriver(
-            session_service=self.session_service
-        )
+        self.alert_driver = driver_lib.AlertDriver(session_service=self.session_service)
         self.resume = resume_lib.ResumeService(
             session=self.session,
             alert_driver=self.alert_driver,
@@ -204,9 +196,7 @@ class TerminateTest(async_case.IsolatedAsyncioTestCase):
                 return False
             return all(bitmask[i] for i in range(num_blocks))
 
-        atps = await concurrency.alist(
-            resume_lib.iter_resume_data_from_disk(self.path)
-        )
+        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
         self.assertEqual(len(atps), 1)
         atp = atps[0]
         self.assertTrue(atp_have_piece(atp, 0))
@@ -229,9 +219,7 @@ class TerminateTest(async_case.IsolatedAsyncioTestCase):
         self.resume.close()
         await asyncio.wait_for(self.resume.wait_closed(), 5)
 
-        atps = await concurrency.alist(
-            resume_lib.iter_resume_data_from_disk(self.path)
-        )
+        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
         self.assertEqual(len(atps), 1)
         atp = atps[0]
         self.assertNotEqual(len(atp.have_pieces), 0)
@@ -257,9 +245,7 @@ class TerminateTest(async_case.IsolatedAsyncioTestCase):
         self.resume.close()
         await asyncio.wait_for(self.resume.wait_closed(), 5)
 
-        atps = await concurrency.alist(
-            resume_lib.iter_resume_data_from_disk(self.path)
-        )
+        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
         self.assertEqual(atps, [])
 
     async def test_finish_remove_terminate(self) -> None:
@@ -282,9 +268,7 @@ class TerminateTest(async_case.IsolatedAsyncioTestCase):
         self.resume.close()
         await asyncio.wait_for(self.resume.wait_closed(), 5)
 
-        atps = await concurrency.alist(
-            resume_lib.iter_resume_data_from_disk(self.path)
-        )
+        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
         self.assertEqual(atps, [])
 
 

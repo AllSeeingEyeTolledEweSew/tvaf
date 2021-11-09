@@ -97,15 +97,11 @@ def _get_part_headers(headers_200: Headers, s: slice) -> Headers:
     return result
 
 
-def _get_multipart_delim(
-    headers_200: Headers, boundary: bytes, s: slice
-) -> bytes:
+def _get_multipart_delim(headers_200: Headers, boundary: bytes, s: slice) -> bytes:
     part_headers = _get_part_headers(headers_200, s)
     result = [b"--", boundary, b"\r\n"]
     for name, value in part_headers.items():
-        result.extend(
-            (name.encode("latin-1"), b": ", value.encode("latin-1"), b"\r\n")
-        )
+        result.extend((name.encode("latin-1"), b": ", value.encode("latin-1"), b"\r\n"))
     result.append(b"\r\n")
     return b"".join(result)
 
@@ -206,18 +202,14 @@ class ByteRangesResponse(starlette.responses.Response):
         self.raw_boundary = self.boundary.encode("latin-1")
         if len(self.slices) == 1:
             s = _normalize(self.headers_200, self.slices[0])
-            self.headers["content-range"] = _get_content_range(
-                self.headers_200, s
-            )
+            self.headers["content-range"] = _get_content_range(self.headers_200, s)
             self.headers["content-length"] = str(s.stop - s.start)
         else:
             self.headers[
                 "content-type"
             ] = f'multipart/byteranges; boundary="{self.boundary}"'
             self.headers["content-length"] = str(
-                _get_multipart_length(
-                    self.headers_200, self.raw_boundary, self.slices
-                )
+                _get_multipart_length(self.headers_200, self.raw_boundary, self.slices)
             )
 
     async def _listen_for_disconnect(self, receive: Receive) -> None:
@@ -245,9 +237,7 @@ class ByteRangesResponse(starlette.responses.Response):
             )
         else:
             for i, s in enumerate(self.slices):
-                delim = _get_multipart_delim(
-                    self.headers_200, self.raw_boundary, s
-                )
+                delim = _get_multipart_delim(self.headers_200, self.raw_boundary, s)
                 if i != 0:
                     delim = b"\r\n" + delim
                 await send(
@@ -304,9 +294,7 @@ class ByteRangesResponse(starlette.responses.Response):
     async def _get_range(self, s: slice) -> Any:
         return self.body[s]
 
-    async def __call__(
-        self, scope: Scope, receive: Receive, send: Send
-    ) -> None:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Invokes the response as an ASGI app.
 
         Args:

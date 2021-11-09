@@ -27,9 +27,7 @@ from . import lib
 from . import request_test_utils
 
 
-class TestReadPiecesWithCancellation(
-    request_test_utils.RequestServiceTestCase
-):
+class TestReadPiecesWithCancellation(request_test_utils.RequestServiceTestCase):
     async def test_remove_before_start(self) -> None:
         self.session.remove_torrent(self.handle)
         # Ensure removal happened before we do read_pieces()
@@ -65,9 +63,7 @@ class TestReadPiecesWithCancellation(
         await concurrency.to_thread(path.write_bytes, b"")
         atp = self.torrent.atp()
         atp.save_path = str(path)
-        self.handle = await concurrency.to_thread(
-            self.session.add_torrent, atp
-        )
+        self.handle = await concurrency.to_thread(self.session.add_torrent, atp)
         await self.feed_pieces()
 
         it = self.service.read_pieces(self.handle, self.all_pieces)
@@ -93,16 +89,12 @@ class TestReadPieces(request_test_utils.RequestServiceTestCase):
     async def test_out_of_order(self) -> None:
         await self.feed_pieces()
         pieces = await asyncio.wait_for(self.read([1, 0]), 5)
-        self.assertEqual(
-            pieces, [self.torrent.pieces[1], self.torrent.pieces[0]]
-        )
+        self.assertEqual(pieces, [self.torrent.pieces[1], self.torrent.pieces[0]])
 
     async def test_duplicates(self) -> None:
         await self.feed_pieces()
         pieces = await asyncio.wait_for(self.read([0, 0]), 5)
-        self.assertEqual(
-            pieces, [self.torrent.pieces[0], self.torrent.pieces[0]]
-        )
+        self.assertEqual(pieces, [self.torrent.pieces[0], self.torrent.pieces[0]])
 
     async def test_repetition(self) -> None:
         await self.feed_pieces()
@@ -142,12 +134,8 @@ class TestReadPieces(request_test_utils.RequestServiceTestCase):
 
     async def test_read_checked_pieces(self) -> None:
         # write data to disk
-        path = pathlib.Path(self.tempdir.name) / os.fsdecode(
-            self.torrent.files[0].path
-        )
-        await concurrency.to_thread(
-            path.write_bytes, self.torrent.files[0].data
-        )
+        path = pathlib.Path(self.tempdir.name) / os.fsdecode(self.torrent.files[0].path)
+        await concurrency.to_thread(path.write_bytes, self.torrent.files[0].data)
         # recheck the torrent
         self.handle.force_recheck()
 

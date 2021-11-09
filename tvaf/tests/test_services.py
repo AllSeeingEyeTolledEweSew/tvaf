@@ -50,9 +50,7 @@ class LifespanTest(TemporaryDirectoryTestCase):
         await services.shutdown()
 
     async def test_with_config(self) -> None:
-        self.assertTrue(
-            await concurrency.to_thread(services.CONFIG_PATH.is_file)
-        )
+        self.assertTrue(await concurrency.to_thread(services.CONFIG_PATH.is_file))
         async with self.start_stop_session():
             pass
 
@@ -123,9 +121,7 @@ class TestDefaultATP(TemporaryDirectoryTestCase):
         await super().asyncTearDown()
 
     async def test_config_defaults(self) -> None:
-        save_path = str(
-            await concurrency.to_thread(pathlib.Path("download").resolve)
-        )
+        save_path = str(await concurrency.to_thread(pathlib.Path("download").resolve))
         config = await services.get_config()
         self.assertEqual(config["torrent_default_save_path"], save_path)
 
@@ -133,9 +129,7 @@ class TestDefaultATP(TemporaryDirectoryTestCase):
 
         self.assertEqual(atp.save_path, save_path)
         self.assertEqual(atp.flags, lt.torrent_flags.default_flags)
-        self.assertEqual(
-            atp.storage_mode, lt.add_torrent_params().storage_mode
-        )
+        self.assertEqual(atp.storage_mode, lt.add_torrent_params().storage_mode)
 
     async def test_set_non_defaults(self) -> None:
         # Set all non-default configs
@@ -153,9 +147,7 @@ class TestDefaultATP(TemporaryDirectoryTestCase):
             atp.flags,
             lt.torrent_flags.default_flags & ~lt.torrent_flags.apply_ip_filter,
         )
-        self.assertEqual(
-            atp.storage_mode, lt.storage_mode_t.storage_mode_allocate
-        )
+        self.assertEqual(atp.storage_mode, lt.storage_mode_t.storage_mode_allocate)
 
     async def test_save_path_loop(self) -> None:
         bad_link = pathlib.Path("bad_link")

@@ -81,9 +81,7 @@ class _State:
         self._handle = handle
         self._session = session
         # OrderdDict to preserve FIFO order for prioritizing requests
-        self._reads: Dict[
-            int, asyncio.Future[bytes]
-        ] = collections.OrderedDict()
+        self._reads: Dict[int, asyncio.Future[bytes]] = collections.OrderedDict()
         self._readers: Dict[int, int] = {}
         self._prev_time_critical: Set[int] = set()
         self._exc = asyncio.get_event_loop().create_future()
@@ -115,9 +113,7 @@ class _State:
     # "setup" (first __anext__() call) and deprioritized in a finally clause.
     # This means that order of priorities between two read_pieces() calls is a
     # race, and deprioritization may be delayed until gc.
-    async def read_pieces(
-        self, pieces: Sequence[int]
-    ) -> AsyncGenerator[bytes, None]:
+    async def read_pieces(self, pieces: Sequence[int]) -> AsyncGenerator[bytes, None]:
         async def check() -> None:
             if not await concurrency.to_thread(
                 ltpy.handle_in_session, self._handle, self._session
@@ -219,9 +215,7 @@ class _State:
             exc = ltpy.exception_from_error_code(alert.error)
             if exc is not None:
                 self.set_exception(exc)
-        elif isinstance(
-            alert, (lt.torrent_checked_alert, lt.torrent_resumed_alert)
-        ):
+        elif isinstance(alert, (lt.torrent_checked_alert, lt.torrent_resumed_alert)):
             # NB: libtorrent's current implementation will just queue the
             # torrent for the next session-wide dht announce cycle, which
             # defaults to 15 minutes!
@@ -242,9 +236,7 @@ class _State:
 
 
 class RequestService:
-    def __init__(
-        self, *, session: lt.session, alert_driver: driver_lib.AlertDriver
-    ):
+    def __init__(self, *, session: lt.session, alert_driver: driver_lib.AlertDriver):
         self._session = session
         self._alert_driver = alert_driver
         self._states: MutableMapping[

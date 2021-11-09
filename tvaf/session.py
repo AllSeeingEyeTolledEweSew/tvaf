@@ -71,8 +71,7 @@ def parse_config(config: config_lib.Config) -> Dict[str, Any]:
             raise config_lib.InvalidConfigError(f"no setting named {key}")
         if settings[key].__class__ != value.__class__:
             raise config_lib.InvalidConfigError(
-                f"{key} should be {settings[key].__class__}, "
-                f"not {value.__class__}"
+                f"{key} should be {settings[key].__class__}, " f"not {value.__class__}"
             )
 
         settings[key] = value
@@ -114,9 +113,7 @@ del _init_alert_mask_name
 
 
 class SessionService:
-    def __init__(
-        self, *, alert_mask: int = 0, config: config_lib.Config = None
-    ):
+    def __init__(self, *, alert_mask: int = 0, config: config_lib.Config = None):
         self._alert_mask_bit_count: Dict[int, int] = {}
         self._inc_alert_mask_bits(alert_mask)
         if config is None:
@@ -131,9 +128,7 @@ class SessionService:
 
     def _inc_alert_mask_bits(self, alert_mask: int) -> None:
         for bit in _get_mask_bits(alert_mask):
-            self._alert_mask_bit_count[bit] = (
-                self._alert_mask_bit_count.get(bit, 0) + 1
-            )
+            self._alert_mask_bit_count[bit] = self._alert_mask_bit_count.get(bit, 0) + 1
 
     def _dec_alert_mask_bits(self, alert_mask: int) -> None:
         for bit in _get_mask_bits(alert_mask):
@@ -167,9 +162,7 @@ class SessionService:
         if not deltas:
             return
         if _LOG.isEnabledFor(logging.DEBUG):
-            delta_alert_mask = (
-                settings["alert_mask"] ^ self._settings["alert_mask"]
-            )
+            delta_alert_mask = settings["alert_mask"] ^ self._settings["alert_mask"]
             for bit in _get_mask_bits(delta_alert_mask):
                 mask = 1 << bit
                 name = _ALERT_MASK_NAME.get(mask, mask)
@@ -181,9 +174,7 @@ class SessionService:
         self.session.apply_settings(deltas)
 
     @contextlib.asynccontextmanager
-    async def stage_config(
-        self, config: config_lib.Config
-    ) -> AsyncIterator[None]:
+    async def stage_config(self, config: config_lib.Config) -> AsyncIterator[None]:
         settings = parse_config(config)
 
         yield

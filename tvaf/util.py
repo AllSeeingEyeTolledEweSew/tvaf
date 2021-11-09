@@ -33,9 +33,7 @@ def iter_bitmap(bitmap: bytes, start: int, stop: int) -> Iterator[bool]:
         yield bitmap_is_set(bitmap, i)
 
 
-def range_to_pieces(
-    piece_length: int, start: int, stop: int
-) -> Tuple[int, int]:
+def range_to_pieces(piece_length: int, start: int, stop: int) -> Tuple[int, int]:
     """Converts a range of bytes to a range of pieces.
 
     Pieces are assumed to be zero-aligned.

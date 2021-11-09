@@ -47,9 +47,7 @@ class TestSession(async_case.IsolatedAsyncioTestCase):
         config = lib.create_isolated_config()
         config["session_alert_mask"] = 2
 
-        session_service = session_lib.SessionService(
-            alert_mask=1, config=config
-        )
+        session_service = session_lib.SessionService(alert_mask=1, config=config)
 
         # Test required mask was added
         settings = session_service.session.get_settings()
@@ -148,9 +146,7 @@ class TestSession(async_case.IsolatedAsyncioTestCase):
         )
 
         # Check base pack name didn't get overwritten
-        self.assertEqual(
-            config["session_settings_base"], "high_performance_seed"
-        )
+        self.assertEqual(config["session_settings_base"], "high_performance_seed")
 
     async def test_settings_base_invalid(self) -> None:
         with self.assertRaises(config_lib.InvalidConfigError):

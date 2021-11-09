@@ -68,9 +68,7 @@ class NotModifiedResponse(starlette.responses.Response):
 _T = TypeVar("_T")
 
 
-def _get_bounds_from_ti(
-    ti: lt.torrent_info, file_index: int
-) -> Tuple[int, int]:
+def _get_bounds_from_ti(ti: lt.torrent_info, file_index: int) -> Tuple[int, int]:
     fs = ti.files()
     if file_index >= fs.num_files():
         raise IndexError(file_index)
@@ -119,9 +117,7 @@ class _Helper:
                 pass
 
             # Add the torrent and get bounds from its metadata
-            return _get_bounds_from_ti(
-                await self.torrent_info, self.file_index
-            )
+            return _get_bounds_from_ti(await self.torrent_info, self.file_index)
         except IndexError:
             raise fastapi.HTTPException(
                 status_code=fastapi.status.HTTP_404_NOT_FOUND,
@@ -212,9 +208,7 @@ async def read_file(
     if request.method == "GET":
         # Will add the torrent if it hasn't been added yet
         piece_length = (await helper.torrent_info).piece_length()
-        start_piece, stop_piece = util.range_to_pieces(
-            piece_length, start, stop
-        )
+        start_piece, stop_piece = util.range_to_pieces(piece_length, start, stop)
         request_service = await services.get_request_service()
         pieces = request_service.read_pieces(
             await helper.valid_handle, range(start_piece, stop_piece)

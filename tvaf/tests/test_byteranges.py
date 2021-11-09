@@ -106,9 +106,7 @@ class ByteRangesResponseTest(unittest.TestCase):
         resp = client.get("/")
         self.assertEqual(resp.status_code, 206)
         self.assertNotIn("content-range", resp.headers)
-        self.assertEqual(
-            resp.headers["content-length"], str(len(resp.content))
-        )
+        self.assertEqual(resp.headers["content-length"], str(len(resp.content)))
 
         msg = response_to_msg(resp)
         self.assertEqual(msg.defects, [])

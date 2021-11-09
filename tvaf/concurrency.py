@@ -64,9 +64,7 @@ async def to_thread(func: Callable[..., _T], *args: Any, **kwargs: Any) -> _T:
     return await loop.run_in_executor(None, bound)
 
 
-async def iter_in_thread(
-    iterator: Iterator[_T], batch_size=100
-) -> AsyncIterator[_T]:
+async def iter_in_thread(iterator: Iterator[_T], batch_size=100) -> AsyncIterator[_T]:
     """Runs a synchronous Iterator in a thread, in batches.
 
     This turns an Iterator into an AsyncIterator. To reduce context switching,
@@ -113,9 +111,7 @@ async def wait_first(aws: Iterable[Awaitable]) -> None:
     """
     tasks = [asyncio.ensure_future(aw) for aw in aws]
     try:
-        (done, pending) = await asyncio.wait(
-            tasks, return_when=asyncio.FIRST_COMPLETED
-        )
+        (done, pending) = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     except asyncio.CancelledError:
         for task in tasks:
             task.cancel()
@@ -217,9 +213,7 @@ class _AcachedProperty(Generic[_T]):
         self._name = name
 
     @overload
-    def __get__(
-        self, instance: None, owner: Type = None
-    ) -> _AcachedProperty[_T]:
+    def __get__(self, instance: None, owner: Type = None) -> _AcachedProperty[_T]:
         ...
 
     @overload
@@ -236,9 +230,7 @@ class _AcachedProperty(Generic[_T]):
 
 
 # This could be 'class acached_property', but this setup helps linters
-def acached_property(
-    func: Callable[[Any], Awaitable[_T]]
-) -> _AcachedProperty[_T]:
+def acached_property(func: Callable[[Any], Awaitable[_T]]) -> _AcachedProperty[_T]:
     """Turns an asynchronous method into an awaitable property.
 
     This is analogous to @functools.cached_property, for asynchronous

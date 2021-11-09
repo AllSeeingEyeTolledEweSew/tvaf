@@ -89,9 +89,7 @@ def get_name_to_access_swarm() -> Mapping[str, AccessSwarm]:
     Returns:
         A mapping from swarm name to AccessSwarm functions.
     """
-    return cast(
-        Mapping[str, AccessSwarm], plugins.get("tvaf.swarm.access_swarm")
-    )
+    return cast(Mapping[str, AccessSwarm], plugins.get("tvaf.swarm.access_swarm"))
 
 
 async def get_name_to_configure_swarm(

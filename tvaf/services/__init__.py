@@ -270,9 +270,7 @@ async def _get_atp_defaults_from_config(
         full_name = f"storage_mode_{maybe_name}"
         mode = lt.storage_mode_t.names.get(full_name)
         if mode is None:
-            raise config_lib.InvalidConfigError(
-                f"invalid storage mode {maybe_name}"
-            )
+            raise config_lib.InvalidConfigError(f"invalid storage mode {maybe_name}")
         atp_defaults["storage_mode"] = mode
     return atp_defaults
 

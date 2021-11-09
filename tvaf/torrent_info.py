@@ -46,9 +46,7 @@ async def get_file_bounds_from_cache(
         Iterable[Callable[[lt.info_hash_t, int], Awaitable[Tuple[int, int]]]],
         plugins.get("tvaf.torrent_info.get_file_bounds_from_cache").values(),
     )
-    return await _first_from_plugins(
-        [func(info_hashes, file_index) for func in funcs]
-    )
+    return await _first_from_plugins([func(info_hashes, file_index) for func in funcs])
 
 
 @lifecycle.alru_cache(maxsize=256)

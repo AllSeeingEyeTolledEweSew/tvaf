@@ -82,9 +82,7 @@ class TestGetNameToAccessSwarm(TestWithPlugins):
 
         name_to_access_swarm = swarm.get_name_to_access_swarm()
 
-        self.assertEqual(
-            set(name_to_access_swarm.keys()), {"public", "all", "none"}
-        )
+        self.assertEqual(set(name_to_access_swarm.keys()), {"public", "all", "none"})
         with self.assertRaises(KeyError):
             await name_to_access_swarm["none"](INFO_HASHES)
         configure_swarm = await name_to_access_swarm["all"](INFO_HASHES)
@@ -100,13 +98,9 @@ class TestGetNameToConfigureSwarm(TestWithPlugins):
         self.fake_eps.add("all", access_all, "tvaf.swarm.access_swarm")
         self.fake_eps.add("none", access_none, "tvaf.swarm.access_swarm")
 
-        name_to_configure_swarm = await swarm.get_name_to_configure_swarm(
-            INFO_HASHES
-        )
+        name_to_configure_swarm = await swarm.get_name_to_configure_swarm(INFO_HASHES)
 
-        self.assertEqual(
-            set(name_to_configure_swarm.keys()), {"public", "all"}
-        )
+        self.assertEqual(set(name_to_configure_swarm.keys()), {"public", "all"})
 
         atp = lt.add_torrent_params()
         atp.info_hashes = INFO_HASHES

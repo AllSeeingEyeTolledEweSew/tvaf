@@ -81,9 +81,7 @@ class OSError(Error, builtins.OSError):
             # it as a "winerror", and will derive an "approximate translation"
             # value for errno, ignoring the 1st arg
             errno_ = builtins.OSError(0, "", None, ec.value()).errno
-        elif cat == GENERIC_CATEGORY or (
-            os.name != "nt" and cat == SYSTEM_CATEGORY
-        ):
+        elif cat == GENERIC_CATEGORY or (os.name != "nt" and cat == SYSTEM_CATEGORY):
             errno_ = ec.value()
         else:
             # Always instantiate this class directly
@@ -317,9 +315,7 @@ def _init_error_code_msg_lookup() -> None:
         value = 1
         while True:
             msg = lt.error_code(value, category).message()
-            _error_code_msg_lookup.setdefault(msg, {}).setdefault(
-                category, value
-            )
+            _error_code_msg_lookup.setdefault(msg, {}).setdefault(category, value)
             # At least http_category and upnp_category yield messages for
             # unknown error codes like "unknown code 123". We do map these
             # messages, but for stop condition testing we strip the decimal

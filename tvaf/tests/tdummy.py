@@ -92,9 +92,7 @@ class File:
         if b"p" in self.attr:
             return b"\x00" * self.length
         if self._data is None:
-            self._data = bytes(
-                random.getrandbits(8) for _ in range(self.length)
-            )
+            self._data = bytes(random.getrandbits(8) for _ in range(self.length))
         return self._data
 
 
@@ -160,9 +158,7 @@ class Torrent:
             self._info = {
                 b"piece length": self.piece_length,
                 b"length": self.length,
-                b"pieces": b"".join(
-                    hashlib.sha1(p).digest() for p in self.pieces
-                ),
+                b"pieces": b"".join(hashlib.sha1(p).digest() for p in self.pieces),
             }
 
             if len(self.files) == 1:
@@ -193,9 +189,7 @@ class Torrent:
     @property
     def info_hash_bytes(self) -> bytes:
         if self._info_hash_bytes is None:
-            self._info_hash_bytes = hashlib.sha1(
-                lt.bencode(self.info)
-            ).digest()
+            self._info_hash_bytes = hashlib.sha1(lt.bencode(self.info)).digest()
         return self._info_hash_bytes
 
     @property

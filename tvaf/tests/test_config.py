@@ -30,9 +30,7 @@ class TestReadWrite(unittest.TestCase):
         self.tempdir.cleanup()
 
     def test_from_disk(self) -> None:
-        self.path.write_text(
-            '{"text_field": "value", ' '"numeric_field": 123}'
-        )
+        self.path.write_text('{"text_field": "value", ' '"numeric_field": 123}')
 
         config = asyncio.run(config_lib.Config.from_disk(self.path))
 
@@ -54,10 +52,7 @@ class TestReadWrite(unittest.TestCase):
 
         self.assertEqual(
             config_text,
-            "{\n"
-            '    "numeric_field": 123,\n'
-            '    "text_field": "value"\n'
-            "}",
+            "{\n" '    "numeric_field": 123,\n' '    "text_field": "value"\n' "}",
         )
 
 
@@ -149,9 +144,7 @@ class Receiver:
         self.config = config_lib.Config()
 
     @contextlib.asynccontextmanager
-    async def stage_config(
-        self, config: config_lib.Config
-    ) -> AsyncIterator[None]:
+    async def stage_config(self, config: config_lib.Config) -> AsyncIterator[None]:
         yield
         self.config = config
 
@@ -170,9 +163,7 @@ class FailReceiver:
         self.config = config_lib.Config()
 
     @contextlib.asynccontextmanager
-    async def stage_config(
-        self, _config: config_lib.Config
-    ) -> AsyncIterator[None]:
+    async def stage_config(self, _config: config_lib.Config) -> AsyncIterator[None]:
         _raise_dummy()
         yield
 

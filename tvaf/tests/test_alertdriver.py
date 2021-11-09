@@ -37,9 +37,7 @@ class IterAlertsTest(async_case.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.session_service = lib.create_isolated_session_service()
         self.session = self.session_service.session
-        self.driver = driver_lib.AlertDriver(
-            session_service=self.session_service
-        )
+        self.driver = driver_lib.AlertDriver(session_service=self.session_service)
         self.driver.start()
         self.tempdir = tempfile.TemporaryDirectory()
         self.torrent = tdummy.DEFAULT
@@ -111,16 +109,13 @@ class IterAlertsTest(async_case.IsolatedAsyncioTestCase):
         handle = self.session.add_torrent(self.atp)
         self.session.remove_torrent(handle)
         with self.assertRaises(ltpy.InvalidTorrentHandleError):
-            with self.driver.iter_alerts(
-                lt.alert_category.status, handle=handle
-            ) as it:
+            with self.driver.iter_alerts(lt.alert_category.status, handle=handle) as it:
                 await asyncio.wait_for(it.__anext__(), 5)
 
     async def test_alert_mask(self) -> None:
         def alerts_enabled() -> bool:
             return bool(
-                self.session.get_settings()["alert_mask"]
-                & lt.alert_category.status
+                self.session.get_settings()["alert_mask"] & lt.alert_category.status
             )
 
         self.assertFalse(alerts_enabled())
@@ -136,8 +131,7 @@ class IterAlertsTest(async_case.IsolatedAsyncioTestCase):
     async def test_alert_mask_with_exception(self) -> None:
         def alerts_enabled() -> bool:
             return bool(
-                self.session.get_settings()["alert_mask"]
-                & lt.alert_category.status
+                self.session.get_settings()["alert_mask"] & lt.alert_category.status
             )
 
         self.assertFalse(alerts_enabled())

@@ -123,9 +123,7 @@ class TestEnumPiecewiseRanges(unittest.TestCase):
     """Tests for tvaf.util.enum_piecewise_ranges()."""
 
     def test_empty(self) -> None:
-        self.assertSequenceEqual(
-            list(util.enum_piecewise_ranges(1024, 1000, 1000)), []
-        )
+        self.assertSequenceEqual(list(util.enum_piecewise_ranges(1024, 1000, 1000)), [])
 
     def test_non_edge_cases(self) -> None:
         self.assertSequenceEqual(

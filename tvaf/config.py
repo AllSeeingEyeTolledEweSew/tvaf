@@ -132,9 +132,7 @@ class Config(dict, MutableMapping[str, Any]):
     """A json-compatible dict."""
 
     @classmethod
-    async def from_disk(
-        cls: Type["_C"], path: Union[str, os.PathLike]
-    ) -> "_C":
+    async def from_disk(cls: Type["_C"], path: Union[str, os.PathLike]) -> "_C":
         """Reads a Config dict from a file.
 
         The file will be parsed as JSON.

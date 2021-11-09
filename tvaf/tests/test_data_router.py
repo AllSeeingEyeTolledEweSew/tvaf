@@ -56,17 +56,13 @@ class AlreadyDownloadedTest(lib.AppTestWithTorrent, lib.TestCase):
         r = await self.client.head(f"/data/btih/{self.torrent.sha1_hash}/i/0")
         self.assertEqual(r.status_code, 200)
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
-        self.assertEqual(
-            r.headers["content-length"], str(self.torrent.files[0].length)
-        )
+        self.assertEqual(r.headers["content-length"], str(self.torrent.files[0].length))
 
     async def test_get(self) -> None:
         r = await self.client.get(f"/data/btih/{self.torrent.sha1_hash}/i/0")
         self.assertEqual(r.status_code, 200)
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
-        self.assertEqual(
-            r.headers["content-length"], str(self.torrent.files[0].length)
-        )
+        self.assertEqual(r.headers["content-length"], str(self.torrent.files[0].length))
         self.assertEqual(r.content, self.torrent.files[0].data)
 
     async def test_206(self) -> None:
@@ -100,9 +96,7 @@ class AlreadyDownloadedTest(lib.AppTestWithTorrent, lib.TestCase):
             headers={"range": "bytes=100-199", "if-range": '"bad"'},
         )
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(
-            r.headers["content-length"], str(self.torrent.files[0].length)
-        )
+        self.assertEqual(r.headers["content-length"], str(self.torrent.files[0].length))
         self.assertEqual(r.content, self.torrent.files[0].data)
 
     async def test_416(self) -> None:
@@ -132,9 +126,7 @@ class SeedTest(lib.AppTest):
         self.torrent = tdummy.DEFAULT_STABLE
 
         self.seed = lib.create_isolated_session_service().session
-        self.seed_dir = await concurrency.to_thread(
-            tempfile.TemporaryDirectory
-        )
+        self.seed_dir = await concurrency.to_thread(tempfile.TemporaryDirectory)
         atp = self.torrent.atp()
         atp.save_path = self.seed_dir.name
         handle = await concurrency.to_thread(self.seed.add_torrent, atp)
@@ -163,16 +155,12 @@ class PublicFallbackTest(SeedTest, lib.TestCase):
     async def test_head(self) -> None:
         r = await self.client.head(f"/data/btih/{self.torrent.sha1_hash}/i/0")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(
-            r.headers["content-length"], str(self.torrent.files[0].length)
-        )
+        self.assertEqual(r.headers["content-length"], str(self.torrent.files[0].length))
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
 
     async def test_get(self) -> None:
         r = await self.client.get(f"/data/btih/{self.torrent.sha1_hash}/i/0")
         self.assertEqual(r.status_code, 200)
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
-        self.assertEqual(
-            r.headers["content-length"], str(self.torrent.files[0].length)
-        )
+        self.assertEqual(r.headers["content-length"], str(self.torrent.files[0].length))
         self.assertEqual(r.content, self.torrent.files[0].data)

@@ -262,9 +262,7 @@ class TorrentStatus(BaseModel):
 
     _errc = pydantic.validator("errc", allow_reuse=True)(optional_error_code)
 
-    _pieces = pydantic.validator("pieces", pre=True, allow_reuse=True)(
-        _convert_pieces
-    )
+    _pieces = pydantic.validator("pieces", pre=True, allow_reuse=True)(_convert_pieces)
     _verified_pieces = pydantic.validator(
         "verified_pieces", pre=True, allow_reuse=True
     )(_convert_pieces)

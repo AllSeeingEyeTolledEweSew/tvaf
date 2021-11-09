@@ -27,15 +27,11 @@ class FormatTest(lib.AppTest, lib.TestCase):
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="short.json")
 
-        r = await self.client.get(
-            "/torrents/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        )
+        r = await self.client.get("/torrents/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="long.json")
 
-        r = await self.client.get(
-            "/torrents/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
-        )
+        r = await self.client.get("/torrents/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="not_hex.json")
 

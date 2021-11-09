@@ -42,9 +42,7 @@ def _select_eps_group(
     if sys.version_info >= (3, 8):
         return eps.get(group_name, ())
     else:
-        return cast(
-            Tuple[importlib_metadata.EntryPoint], eps.select(group=group_name)
-        )
+        return cast(Tuple[importlib_metadata.EntryPoint], eps.select(group=group_name))
 
 
 @lifecycle.lru_cache(maxsize=256)

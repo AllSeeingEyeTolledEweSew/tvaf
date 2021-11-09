@@ -52,9 +52,7 @@ async def btih_to_true(info_hashes: lt.info_hash_t) -> bool:
     return True
 
 
-async def btih_index_to_keyerror(
-    info_hashes: lt.info_hash_t, index: int
-) -> None:
+async def btih_index_to_keyerror(info_hashes: lt.info_hash_t, index: int) -> None:
     assert info_hashes == INFO_HASHES
     assert index == INDEX
     raise KeyError(info_hashes)
@@ -74,9 +72,7 @@ class TestIsPrivate(TestWithPlugins):
             await torrent_info.is_private(INFO_HASHES)
 
     async def test_keyerror(self) -> None:
-        self.fake_eps.add(
-            "keyerror", btih_to_keyerror, "tvaf.torrent_info.is_private"
-        )
+        self.fake_eps.add("keyerror", btih_to_keyerror, "tvaf.torrent_info.is_private")
         with self.assertRaises(KeyError):
             await torrent_info.is_private(INFO_HASHES)
 
@@ -85,9 +81,7 @@ class TestIsPrivate(TestWithPlugins):
         self.assertTrue(await torrent_info.is_private(INFO_HASHES))
 
     async def test_keyerror_and_true(self) -> None:
-        self.fake_eps.add(
-            "keyerror", btih_to_keyerror, "tvaf.torrent_info.is_private"
-        )
+        self.fake_eps.add("keyerror", btih_to_keyerror, "tvaf.torrent_info.is_private")
         self.fake_eps.add("true", btih_to_true, "tvaf.torrent_info.is_private")
         self.assertTrue(await torrent_info.is_private(INFO_HASHES))
 

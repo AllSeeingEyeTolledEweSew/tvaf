@@ -72,15 +72,9 @@ class TestExceptionSubtypeInstantiation(unittest.TestCase):
         self.assertIsInstance(func(errno.ECHILD), ltpy.ChildProcessError)
         self.assertIsInstance(func(errno.EPIPE), ltpy.BrokenPipeError)
         self.assertIsInstance(func(errno.ESHUTDOWN), ltpy.BrokenPipeError)
-        self.assertIsInstance(
-            func(errno.ECONNABORTED), ltpy.ConnectionAbortedError
-        )
-        self.assertIsInstance(
-            func(errno.ECONNREFUSED), ltpy.ConnectionRefusedError
-        )
-        self.assertIsInstance(
-            func(errno.ECONNRESET), ltpy.ConnectionResetError
-        )
+        self.assertIsInstance(func(errno.ECONNABORTED), ltpy.ConnectionAbortedError)
+        self.assertIsInstance(func(errno.ECONNREFUSED), ltpy.ConnectionRefusedError)
+        self.assertIsInstance(func(errno.ECONNRESET), ltpy.ConnectionResetError)
         self.assertIsInstance(func(errno.EEXIST), ltpy.FileExistsError)
         self.assertIsInstance(func(errno.ENOENT), ltpy.FileNotFoundError)
         self.assertIsInstance(func(errno.EINTR), ltpy.InterruptedError)
@@ -123,9 +117,7 @@ class TestExceptionSubtypeInstantiation(unittest.TestCase):
 
     def test_libtorrent_error(self) -> None:
         def func(value: int) -> ltpy.LibtorrentError:
-            return ltpy.LibtorrentError(
-                lt.error_code(value, lt.libtorrent_category())
-            )
+            return ltpy.LibtorrentError(lt.error_code(value, lt.libtorrent_category()))
 
         self.assertIsInstance(func(999), ltpy.LibtorrentError)
         self.assertIsInstance(
@@ -143,9 +135,7 @@ class TestExceptionSubtypeInstantiation(unittest.TestCase):
 
         # Test construction with wrong category
         self.assertIsInstance(
-            ltpy.LibtorrentError(
-                lt.error_code(errno.ENOENT, lt.generic_category())
-            ),
+            ltpy.LibtorrentError(lt.error_code(errno.ENOENT, lt.generic_category())),
             ltpy.LibtorrentError,
         )
 
@@ -164,15 +154,9 @@ class TestExceptionSubtypeInstantiation(unittest.TestCase):
         self.assertIsInstance(func(errno.ECHILD), ltpy.ChildProcessError)
         self.assertIsInstance(func(errno.EPIPE), ltpy.BrokenPipeError)
         self.assertIsInstance(func(errno.ESHUTDOWN), ltpy.BrokenPipeError)
-        self.assertIsInstance(
-            func(errno.ECONNABORTED), ltpy.ConnectionAbortedError
-        )
-        self.assertIsInstance(
-            func(errno.ECONNREFUSED), ltpy.ConnectionRefusedError
-        )
-        self.assertIsInstance(
-            func(errno.ECONNRESET), ltpy.ConnectionResetError
-        )
+        self.assertIsInstance(func(errno.ECONNABORTED), ltpy.ConnectionAbortedError)
+        self.assertIsInstance(func(errno.ECONNREFUSED), ltpy.ConnectionRefusedError)
+        self.assertIsInstance(func(errno.ECONNRESET), ltpy.ConnectionResetError)
         self.assertIsInstance(func(errno.EEXIST), ltpy.FileExistsError)
         self.assertIsInstance(func(errno.ENOENT), ltpy.FileNotFoundError)
         self.assertIsInstance(func(errno.EINTR), ltpy.InterruptedError)
@@ -209,28 +193,16 @@ class TestExceptionSubtypeInstantiation(unittest.TestCase):
         self.assertIsInstance(func(WSAEALREADY), ltpy.BlockingIOError)
         self.assertIsInstance(func(WSAEWOULDBLOCK), ltpy.BlockingIOError)
         self.assertIsInstance(func(WSAEINPROGRESS), ltpy.BlockingIOError)
-        self.assertIsInstance(
-            func(ERROR_WAIT_NO_CHILDREN), ltpy.ChildProcessError
-        )
-        self.assertIsInstance(
-            func(ERROR_CHILD_NOT_COMPLETE), ltpy.ChildProcessError
-        )
+        self.assertIsInstance(func(ERROR_WAIT_NO_CHILDREN), ltpy.ChildProcessError)
+        self.assertIsInstance(func(ERROR_CHILD_NOT_COMPLETE), ltpy.ChildProcessError)
         self.assertIsInstance(func(ERROR_BROKEN_PIPE), ltpy.BrokenPipeError)
-        self.assertIsInstance(
-            func(WSAECONNABORTED), ltpy.ConnectionAbortedError
-        )
-        self.assertIsInstance(
-            func(WSAECONNREFUSED), ltpy.ConnectionRefusedError
-        )
+        self.assertIsInstance(func(WSAECONNABORTED), ltpy.ConnectionAbortedError)
+        self.assertIsInstance(func(WSAECONNREFUSED), ltpy.ConnectionRefusedError)
         self.assertIsInstance(func(WSAECONNRESET), ltpy.ConnectionResetError)
         self.assertIsInstance(func(ERROR_FILE_EXISTS), ltpy.FileExistsError)
         self.assertIsInstance(func(ERROR_ALREADY_EXISTS), ltpy.FileExistsError)
-        self.assertIsInstance(
-            func(ERROR_FILE_NOT_FOUND), ltpy.FileNotFoundError
-        )
-        self.assertIsInstance(
-            func(ERROR_PATH_NOT_FOUND), ltpy.FileNotFoundError
-        )
+        self.assertIsInstance(func(ERROR_FILE_NOT_FOUND), ltpy.FileNotFoundError)
+        self.assertIsInstance(func(ERROR_PATH_NOT_FOUND), ltpy.FileNotFoundError)
         self.assertIsInstance(func(WSAEINTR), ltpy.InterruptedError)
         self.assertIsInstance(func(ERROR_DIRECTORY), ltpy.NotADirectoryError)
         self.assertIsInstance(func(ERROR_ACCESS_DENIED), ltpy.PermissionError)
@@ -276,15 +248,9 @@ class TestExceptionFromErrorCode(unittest.TestCase):
         self.assertIsInstance(func(errno.ECHILD), ltpy.ChildProcessError)
         self.assertIsInstance(func(errno.EPIPE), ltpy.BrokenPipeError)
         self.assertIsInstance(func(errno.ESHUTDOWN), ltpy.BrokenPipeError)
-        self.assertIsInstance(
-            func(errno.ECONNABORTED), ltpy.ConnectionAbortedError
-        )
-        self.assertIsInstance(
-            func(errno.ECONNREFUSED), ltpy.ConnectionRefusedError
-        )
-        self.assertIsInstance(
-            func(errno.ECONNRESET), ltpy.ConnectionResetError
-        )
+        self.assertIsInstance(func(errno.ECONNABORTED), ltpy.ConnectionAbortedError)
+        self.assertIsInstance(func(errno.ECONNREFUSED), ltpy.ConnectionRefusedError)
+        self.assertIsInstance(func(errno.ECONNRESET), ltpy.ConnectionResetError)
         self.assertIsInstance(func(errno.EEXIST), ltpy.FileExistsError)
         self.assertIsInstance(func(errno.ENOENT), ltpy.FileNotFoundError)
         self.assertIsInstance(func(errno.EINTR), ltpy.InterruptedError)
@@ -337,9 +303,7 @@ class TestExceptionFromErrorCode(unittest.TestCase):
 
     def test_no_error(self) -> None:
         self.assertIsNone(
-            ltpy.exception_from_error_code(
-                lt.error_code(0, lt.libtorrent_category())
-            )
+            ltpy.exception_from_error_code(lt.error_code(0, lt.libtorrent_category()))
         )
 
 
