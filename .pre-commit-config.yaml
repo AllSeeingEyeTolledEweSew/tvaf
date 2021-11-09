@@ -60,7 +60,6 @@ repos:
           tvaf/lifecycle.py|
           tvaf/ltmodels.py|
           tvaf/ltpy.py|
-          tvaf/multihash.py|
           tvaf/plugins.py|
           tvaf/request.py|
           tvaf/resume.py|

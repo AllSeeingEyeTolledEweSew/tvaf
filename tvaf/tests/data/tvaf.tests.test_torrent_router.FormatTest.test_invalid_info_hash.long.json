@@ -1,0 +1,15 @@
+{
+    "detail": [
+        {
+            "ctx": {
+                "limit_value": 40
+            },
+            "loc": [
+                "path",
+                "info_hash"
+            ],
+            "msg": "ensure this value has at most 40 characters",
+            "type": "value_error.any_str.max_length"
+        }
+    ]
+}

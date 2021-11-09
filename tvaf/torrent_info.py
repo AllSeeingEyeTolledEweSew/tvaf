@@ -18,9 +18,10 @@ from typing import Iterable
 from typing import Tuple
 from typing import TypeVar
 
+import libtorrent as lt
+
 from . import concurrency
 from . import lifecycle
-from . import multihash
 from . import plugins
 
 _T = TypeVar("_T")
@@ -39,23 +40,21 @@ async def _first_from_plugins(aws: Iterable[Awaitable[_T]]) -> _T:
 
 @lifecycle.alru_cache(maxsize=256)
 async def get_file_bounds_from_cache(
-    btmh: multihash.Multihash, file_index: int
+    info_hashes: lt.info_hash_t, file_index: int
 ) -> Tuple[int, int]:
     funcs = cast(
-        Iterable[
-            Callable[[multihash.Multihash, int], Awaitable[Tuple[int, int]]]
-        ],
+        Iterable[Callable[[lt.info_hash_t, int], Awaitable[Tuple[int, int]]]],
         plugins.get("tvaf.torrent_info.get_file_bounds_from_cache").values(),
     )
     return await _first_from_plugins(
-        [func(btmh, file_index) for func in funcs]
+        [func(info_hashes, file_index) for func in funcs]
     )
 
 
 @lifecycle.alru_cache(maxsize=256)
-async def is_private(btmh: multihash.Multihash) -> bool:
+async def is_private(info_hashes: lt.info_hash_t) -> bool:
     funcs = cast(
-        Iterable[Callable[[multihash.Multihash], Awaitable[bool]]],
+        Iterable[Callable[[lt.info_hash_t], Awaitable[bool]]],
         plugins.get("tvaf.torrent_info.is_private").values(),
     )
-    return await _first_from_plugins([func(btmh) for func in funcs])
+    return await _first_from_plugins([func(info_hashes) for func in funcs])

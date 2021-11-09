@@ -49,7 +49,6 @@ from typing import Mapping
 
 import libtorrent as lt
 
-from . import multihash
 from . import plugins
 from . import torrent_info
 
@@ -70,7 +69,7 @@ Therefore, a ConfigureSwarms function must either
    is private, and configure tracker URLs.
 """
 
-AccessSwarm = Callable[[multihash.Multihash], Awaitable[ConfigureSwarm]]
+AccessSwarm = Callable[[lt.info_hash_t], Awaitable[ConfigureSwarm]]
 """Checks that a swarm can access the torrent, and returns a ConfigureSwarm.
 
 If the swarm cannot access the torrent, it must raise KeyError.
@@ -96,7 +95,7 @@ def get_name_to_access_swarm() -> Mapping[str, AccessSwarm]:
 
 
 async def get_name_to_configure_swarm(
-    btmh: multihash.Multihash,
+    info_hashes: lt.info_hash_t,
 ) -> Mapping[str, ConfigureSwarm]:
     """Retrieves all ConfigureSwarm functions from plugins.
 
@@ -111,7 +110,7 @@ async def get_name_to_configure_swarm(
     """
     # Runs all AccessSwarm functions in parallel
     name_to_task = {
-        name: asyncio.create_task(access(btmh))
+        name: asyncio.create_task(access(info_hashes))
         for name, access in get_name_to_access_swarm().items()
     }
     name_to_configure_swarm: Dict[str, ConfigureSwarm] = {}
@@ -125,9 +124,9 @@ async def get_name_to_configure_swarm(
     return name_to_configure_swarm
 
 
-async def _is_known_private(btmh: multihash.Multihash) -> bool:
+async def _is_known_private(info_hashes: lt.info_hash_t) -> bool:
     try:
-        return await torrent_info.is_private(btmh)
+        return await torrent_info.is_private(info_hashes)
     except KeyError:
         return False
 
@@ -138,8 +137,8 @@ async def _configure_public(atp: lt.add_torrent_params) -> None:
     # TODO: check trackers against known swarms
 
 
-async def _access_public(btmh: multihash.Multihash) -> ConfigureSwarm:
-    if await _is_known_private(btmh):
-        raise KeyError(btmh)
+async def _access_public(info_hashes: lt.info_hash_t) -> ConfigureSwarm:
+    if await _is_known_private(info_hashes):
+        raise KeyError(info_hashes)
 
     return _configure_public

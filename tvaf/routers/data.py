@@ -30,8 +30,8 @@ import starlette.types
 
 from .. import byteranges
 from .. import concurrency
+from .. import ltmodels
 from .. import ltpy
-from .. import multihash
 from .. import services
 from .. import swarm
 from .. import torrent_info
@@ -68,12 +68,6 @@ class NotModifiedResponse(starlette.responses.Response):
 _T = TypeVar("_T")
 
 
-def _btmh_to_info_hashes(btmh: multihash.Multihash) -> lt.info_hash_t:
-    if btmh.func == multihash.Func.sha1:
-        return lt.info_hash_t(lt.sha1_hash(btmh.digest))
-    raise ValueError(btmh.func)
-
-
 def _get_bounds_from_ti(
     ti: lt.torrent_info, file_index: int
 ) -> Tuple[int, int]:
@@ -86,16 +80,16 @@ def _get_bounds_from_ti(
 
 
 class _Helper:
-    def __init__(self, btmh: multihash.Multihash, file_index: int) -> None:
-        self.btmh = btmh
+    def __init__(self, info_hashes: lt.info_hash_t, file_index: int) -> None:
+        self.info_hashes = info_hashes
         self.file_index = file_index
 
     @concurrency.acached_property
     async def existing_handle(self) -> lt.torrent_handle:
-        assert self.btmh.func == multihash.Func.sha1
-        sha1_hash = lt.sha1_hash(self.btmh.digest)
         session = await services.get_session()
-        return await concurrency.to_thread(session.find_torrent, sha1_hash)
+        return await concurrency.to_thread(
+            session.find_torrent, self.info_hashes.get_best()
+        )
 
     @concurrency.acached_property
     async def existing_torrent_info(self) -> Optional[lt.torrent_info]:
@@ -119,7 +113,7 @@ class _Helper:
             # Get bounds from cache
             try:
                 return await torrent_info.get_file_bounds_from_cache(
-                    self.btmh, self.file_index
+                    self.info_hashes, self.file_index
                 )
             except KeyError:
                 pass
@@ -139,7 +133,7 @@ class _Helper:
         self,
     ) -> swarm.ConfigureSwarm:
         name_to_configure_swarm = await swarm.get_name_to_configure_swarm(
-            self.btmh
+            self.info_hashes
         )
         if not name_to_configure_swarm:
             raise fastapi.HTTPException(
@@ -155,7 +149,7 @@ class _Helper:
             return existing
         configure_swarm = await self.configure_swarm
         atp = await services.get_default_atp()
-        atp.info_hashes = _btmh_to_info_hashes(self.btmh)
+        atp.info_hashes = self.info_hashes
         await configure_swarm(atp)
         await services.configure_atp(atp)
         atp.flags &= ~lt.torrent_flags.duplicate_is_error
@@ -165,25 +159,19 @@ class _Helper:
             return await concurrency.to_thread(session.add_torrent, atp)
 
 
-@ROUTER.api_route("/btmh/{btmh}/i/{file_index}", methods=["GET", "HEAD"])
+@ROUTER.api_route("/btih/{info_hash}/i/{file_index}", methods=["GET", "HEAD"])
 async def read_file(
-    btmh: multihash.Multihash,
+    info_hash: ltmodels.Hex160,
     file_index: NonNegativeInt,
     request: fastapi.Request,
 ):
-    if btmh.func != multihash.Func.sha1:
-        raise fastapi.HTTPException(
-            status_code=fastapi.status.HTTP_404_NOT_FOUND,
-            detail="only sha1 info-hashes supported at this time",
-        )
-
-    helper = _Helper(btmh, file_index)
+    helper = _Helper(ltmodels.info_hashes_from_digest(info_hash), file_index)
     # May add the torrent, to figure out bounds from its torrent_info
     start, stop = await helper.bounds
     length = stop - start
 
     status_code = fastapi.status.HTTP_200_OK
-    etag = f'"{btmh}.{file_index}"'
+    etag = f'"{info_hash.hex()}.{file_index}"'
     headers = MutableHeaders(
         {
             "Content-Type": "application/octet-stream",

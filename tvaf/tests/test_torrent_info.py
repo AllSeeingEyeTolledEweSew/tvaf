@@ -15,9 +15,9 @@ import random
 from typing import Tuple
 
 from later.unittest.backport import async_case
+import libtorrent as lt
 
 from tvaf import lifecycle
-from tvaf import multihash
 from tvaf import torrent_info
 
 from . import lib
@@ -35,35 +35,35 @@ class TestWithPlugins(async_case.IsolatedAsyncioTestCase):
         lifecycle.clear()
 
 
-BTMH = multihash.Multihash(
-    multihash.Func.sha1, bytes(random.getrandbits(8) for _ in range(20))
+INFO_HASHES = lt.info_hash_t(
+    lt.sha1_hash(bytes(random.getrandbits(8) for _ in range(20)))
 )
 INDEX = 123
 BOUNDS = (1234, 5678)
 
 
-async def btmh_to_keyerror(btmh: multihash.Multihash) -> None:
-    assert btmh == BTMH
-    raise KeyError()
+async def btih_to_keyerror(info_hashes: lt.info_hash_t) -> None:
+    assert info_hashes == INFO_HASHES
+    raise KeyError(info_hashes)
 
 
-async def btmh_to_true(btmh: multihash.Multihash) -> bool:
-    assert btmh == BTMH
+async def btih_to_true(info_hashes: lt.info_hash_t) -> bool:
+    assert info_hashes == INFO_HASHES
     return True
 
 
-async def btmh_index_to_keyerror(
-    btmh: multihash.Multihash, index: int
+async def btih_index_to_keyerror(
+    info_hashes: lt.info_hash_t, index: int
 ) -> None:
-    assert btmh == BTMH
+    assert info_hashes == INFO_HASHES
     assert index == INDEX
-    raise KeyError()
+    raise KeyError(info_hashes)
 
 
-async def btmh_index_to_bounds(
-    btmh: multihash.Multihash, index: int
+async def btih_index_to_bounds(
+    info_hashes: lt.info_hash_t, index: int
 ) -> Tuple[int, int]:
-    assert btmh == BTMH
+    assert info_hashes == INFO_HASHES
     assert index == INDEX
     return BOUNDS
 
@@ -71,62 +71,64 @@ async def btmh_index_to_bounds(
 class TestIsPrivate(TestWithPlugins):
     async def test_no_plugins(self) -> None:
         with self.assertRaises(KeyError):
-            await torrent_info.is_private(BTMH)
+            await torrent_info.is_private(INFO_HASHES)
 
     async def test_keyerror(self) -> None:
         self.fake_eps.add(
-            "keyerror", btmh_to_keyerror, "tvaf.torrent_info.is_private"
+            "keyerror", btih_to_keyerror, "tvaf.torrent_info.is_private"
         )
         with self.assertRaises(KeyError):
-            await torrent_info.is_private(BTMH)
+            await torrent_info.is_private(INFO_HASHES)
 
     async def test_true(self) -> None:
-        self.fake_eps.add("true", btmh_to_true, "tvaf.torrent_info.is_private")
-        self.assertTrue(await torrent_info.is_private(BTMH))
+        self.fake_eps.add("true", btih_to_true, "tvaf.torrent_info.is_private")
+        self.assertTrue(await torrent_info.is_private(INFO_HASHES))
 
     async def test_keyerror_and_true(self) -> None:
         self.fake_eps.add(
-            "keyerror", btmh_to_keyerror, "tvaf.torrent_info.is_private"
+            "keyerror", btih_to_keyerror, "tvaf.torrent_info.is_private"
         )
-        self.fake_eps.add("true", btmh_to_true, "tvaf.torrent_info.is_private")
-        self.assertTrue(await torrent_info.is_private(BTMH))
+        self.fake_eps.add("true", btih_to_true, "tvaf.torrent_info.is_private")
+        self.assertTrue(await torrent_info.is_private(INFO_HASHES))
 
 
 class TestFileBoundsFromCache(TestWithPlugins):
     async def test_no_plugins(self) -> None:
         with self.assertRaises(KeyError):
-            await torrent_info.get_file_bounds_from_cache(BTMH, INDEX)
+            await torrent_info.get_file_bounds_from_cache(INFO_HASHES, INDEX)
 
     async def test_keyerror(self) -> None:
         self.fake_eps.add(
             "keyerror",
-            btmh_index_to_keyerror,
+            btih_index_to_keyerror,
             "tvaf.torrent_info.get_file_bounds_from_cache",
         )
         with self.assertRaises(KeyError):
-            await torrent_info.get_file_bounds_from_cache(BTMH, INDEX)
+            await torrent_info.get_file_bounds_from_cache(INFO_HASHES, INDEX)
 
     async def test_valid(self) -> None:
         self.fake_eps.add(
             "valid",
-            btmh_index_to_bounds,
+            btih_index_to_bounds,
             "tvaf.torrent_info.get_file_bounds_from_cache",
         )
         self.assertEqual(
-            await torrent_info.get_file_bounds_from_cache(BTMH, INDEX), BOUNDS
+            await torrent_info.get_file_bounds_from_cache(INFO_HASHES, INDEX),
+            BOUNDS,
         )
 
     async def test_keyerror_and_valid(self) -> None:
         self.fake_eps.add(
             "keyerror",
-            btmh_index_to_keyerror,
+            btih_index_to_keyerror,
             "tvaf.torrent_info.get_file_bounds_from_cache",
         )
         self.fake_eps.add(
             "valid",
-            btmh_index_to_bounds,
+            btih_index_to_bounds,
             "tvaf.torrent_info.get_file_bounds_from_cache",
         )
         self.assertEqual(
-            await torrent_info.get_file_bounds_from_cache(BTMH, INDEX), BOUNDS
+            await torrent_info.get_file_bounds_from_cache(INFO_HASHES, INDEX),
+            BOUNDS,
         )

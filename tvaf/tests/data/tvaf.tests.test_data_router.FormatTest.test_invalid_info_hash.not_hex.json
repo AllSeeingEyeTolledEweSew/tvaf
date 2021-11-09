@@ -1,0 +1,15 @@
+{
+    "detail": [
+        {
+            "ctx": {
+                "pattern": "[0-9a-f]*$"
+            },
+            "loc": [
+                "path",
+                "info_hash"
+            ],
+            "msg": "string does not match regex \"[0-9a-f]*$\"",
+            "type": "value_error.str.regex"
+        }
+    ]
+}

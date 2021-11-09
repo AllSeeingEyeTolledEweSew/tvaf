@@ -26,8 +26,6 @@ from typing import Union
 import libtorrent as lt
 from typing_extensions import TypedDict
 
-from tvaf import multihash
-
 PIECE_LENGTH = 16384
 NAME = b"test.txt"
 LEN = PIECE_LENGTH * 9 + 1000
@@ -205,8 +203,8 @@ class Torrent:
         return lt.sha1_hash(self.info_hash_bytes)
 
     @property
-    def btmh(self) -> multihash.Multihash:
-        return multihash.Multihash(multihash.Func.sha1, self.info_hash_bytes)
+    def info_hashes(self) -> lt.info_hash_t:
+        return lt.info_hash_t(self.sha1_hash)
 
     def torrent_info(self) -> lt.torrent_info:
         return lt.torrent_info(self.dict)
@@ -222,14 +220,14 @@ class Torrent:
         atp.info_hash = self.sha1_hash
         atp.ti = self.torrent_info()
 
-    def _check_btmh(self, btmh: multihash.Multihash) -> None:
-        if btmh != self.btmh:
-            raise KeyError()
+    def _check_info_hashes(self, info_hashes: lt.info_hash_t) -> None:
+        if info_hashes == self.info_hashes:
+            raise KeyError(info_hashes)
 
     async def get_configure_atp(
-        self, btmh: multihash.Multihash
+        self, info_hashes: lt.info_hash_t
     ) -> Callable[[lt.add_torrent_params], Any]:
-        self._check_btmh(btmh)
+        self._check_info_hashes(info_hashes)
 
         async def configure_atp(atp: lt.add_torrent_params) -> None:
             self.configure_atp(atp)
@@ -237,16 +235,16 @@ class Torrent:
         return configure_atp
 
     async def get_file_bounds_from_cache(
-        self, btmh: multihash.Multihash, file_index: int
+        self, info_hashes: lt.info_hash_t, file_index: int
     ) -> Tuple[int, int]:
-        self._check_btmh(btmh)
+        self._check_info_hashes(info_hashes)
         file_info = self.files[file_index]
         return (file_info.start, file_info.stop)
 
     async def get_file_name(
-        self, btmh: multihash.Multihash, file_index: int
+        self, info_hashes: lt.info_hash_t, file_index: int
     ) -> Union[str, bytes]:
-        self._check_btmh(btmh)
+        self._check_info_hashes(info_hashes)
         return self.files[file_index].path_split[-1]
 
 

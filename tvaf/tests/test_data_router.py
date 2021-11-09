@@ -20,43 +20,32 @@ from . import tdummy
 
 
 class FormatTest(lib.AppTest, lib.TestCase):
-    async def test_invalid_multihash(self) -> None:
-        # not a valid multihash
-        r = await self.client.get("/data/btmh/ffff/i/0")
+    async def test_invalid_info_hash(self) -> None:
+        r = await self.client.get("/data/btih/a/i/0")
         self.assertEqual(r.status_code, 422)
-        self.assert_golden_json(r.json(), suffix="invalid_multihash.json")
+        self.assert_golden_json(r.json(), suffix="short.json")
 
-        # inconsistent sha1 length
-        r = await self.client.get("/data/btmh/1114a0/i/0")
+        r = await self.client.get(
+            "/data/btih/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/i/0"
+        )
         self.assertEqual(r.status_code, 422)
-        self.assert_golden_json(r.json(), suffix="short_sha1.json")
+        self.assert_golden_json(r.json(), suffix="long.json")
 
-        # wrong sha1 length (110100) -- should this be 422?
-
-        # odd-numbered hex digits
-        r = await self.client.get("/data/btmh/a/i/0")
+        r = await self.client.get(
+            "/data/btih/zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz/i/0"
+        )
         self.assertEqual(r.status_code, 422)
-        self.assert_golden_json(r.json(), suffix="odd_hex_digits.json")
-
-        # not hexadecimal
-        r = await self.client.get("/data/btmh/not-hexadecimal/i/0")
-        self.assertEqual(r.status_code, 422)
-        self.assert_golden_json(r.json(), suffix="not_hexadecimal.json")
-
-        # not sha1
-        r = await self.client.get("/data/btmh/1201cd/i/0")
-        self.assertEqual(r.status_code, 404)
-        self.assert_golden_json(r.json(), suffix="not_sha1.json")
+        self.assert_golden_json(r.json(), suffix="not_hex.json")
 
     async def test_invalid_file_index(self) -> None:
         r = await self.client.get(
-            "/data/btmh/1114aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/i/-1"
+            "/data/btih/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/i/-1"
         )
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="negative_index.json")
 
         r = await self.client.get(
-            "/data/btmh/1114aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/i/a"
+            "/data/btih/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/i/a"
         )
         self.assertEqual(r.status_code, 422)
         self.assert_golden_json(r.json(), suffix="bad_index.json")
@@ -64,7 +53,7 @@ class FormatTest(lib.AppTest, lib.TestCase):
 
 class AlreadyDownloadedTest(lib.AppTestWithTorrent, lib.TestCase):
     async def test_head(self) -> None:
-        r = await self.client.head(f"/data/btmh/{self.torrent.btmh}/i/0")
+        r = await self.client.head(f"/data/btih/{self.torrent.sha1_hash}/i/0")
         self.assertEqual(r.status_code, 200)
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
         self.assertEqual(
@@ -72,7 +61,7 @@ class AlreadyDownloadedTest(lib.AppTestWithTorrent, lib.TestCase):
         )
 
     async def test_get(self) -> None:
-        r = await self.client.get(f"/data/btmh/{self.torrent.btmh}/i/0")
+        r = await self.client.get(f"/data/btih/{self.torrent.sha1_hash}/i/0")
         self.assertEqual(r.status_code, 200)
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
         self.assertEqual(
@@ -82,7 +71,7 @@ class AlreadyDownloadedTest(lib.AppTestWithTorrent, lib.TestCase):
 
     async def test_206(self) -> None:
         r = await self.client.get(
-            f"/data/btmh/{self.torrent.btmh}/i/0",
+            f"/data/btih/{self.torrent.sha1_hash}/i/0",
             headers={"range": "bytes=100-199"},
         )
         self.assertEqual(r.status_code, 206)
@@ -93,10 +82,10 @@ class AlreadyDownloadedTest(lib.AppTestWithTorrent, lib.TestCase):
         self.assertEqual(r.content, self.torrent.files[0].data[100:200])
 
     async def test_206_if_range(self) -> None:
-        r = await self.client.get(f"/data/btmh/{self.torrent.btmh}/i/0")
+        r = await self.client.get(f"/data/btih/{self.torrent.sha1_hash}/i/0")
         etag = r.headers["etag"]
         r = await self.client.get(
-            f"/data/btmh/{self.torrent.btmh}/i/0",
+            f"/data/btih/{self.torrent.sha1_hash}/i/0",
             headers={"range": "bytes=100-199", "if-range": etag},
         )
         self.assertEqual(r.status_code, 206)
@@ -107,7 +96,7 @@ class AlreadyDownloadedTest(lib.AppTestWithTorrent, lib.TestCase):
 
     async def test_206_if_range_fail(self) -> None:
         r = await self.client.get(
-            f"/data/btmh/{self.torrent.btmh}/i/0",
+            f"/data/btih/{self.torrent.sha1_hash}/i/0",
             headers={"range": "bytes=100-199", "if-range": '"bad"'},
         )
         self.assertEqual(r.status_code, 200)
@@ -118,7 +107,7 @@ class AlreadyDownloadedTest(lib.AppTestWithTorrent, lib.TestCase):
 
     async def test_416(self) -> None:
         r = await self.client.get(
-            f"/data/btmh/{self.torrent.btmh}/i/0",
+            f"/data/btih/{self.torrent.sha1_hash}/i/0",
             headers={"range": "bytes=999999999-"},
         )
         self.assertEqual(r.status_code, 416)
@@ -127,10 +116,10 @@ class AlreadyDownloadedTest(lib.AppTestWithTorrent, lib.TestCase):
         self.assertEqual(r.headers["content-range"], f"bytes */{length}")
 
     async def test_304(self) -> None:
-        r = await self.client.get(f"/data/btmh/{self.torrent.btmh}/i/0")
+        r = await self.client.get(f"/data/btih/{self.torrent.sha1_hash}/i/0")
         etag = r.headers["etag"]
         r = await self.client.get(
-            f"/data/btmh/{self.torrent.btmh}/i/0",
+            f"/data/btih/{self.torrent.sha1_hash}/i/0",
             headers={"if-none-match": etag},
         )
         self.assertEqual(r.status_code, 304)
@@ -172,7 +161,7 @@ class PublicFallbackTest(SeedTest, lib.TestCase):
         await services.set_config(config)
 
     async def test_head(self) -> None:
-        r = await self.client.head(f"/data/btmh/{self.torrent.btmh}/i/0")
+        r = await self.client.head(f"/data/btih/{self.torrent.sha1_hash}/i/0")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(
             r.headers["content-length"], str(self.torrent.files[0].length)
@@ -180,7 +169,7 @@ class PublicFallbackTest(SeedTest, lib.TestCase):
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
 
     async def test_get(self) -> None:
-        r = await self.client.get(f"/data/btmh/{self.torrent.btmh}/i/0")
+        r = await self.client.get(f"/data/btih/{self.torrent.sha1_hash}/i/0")
         self.assertEqual(r.status_code, 200)
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
         self.assertEqual(

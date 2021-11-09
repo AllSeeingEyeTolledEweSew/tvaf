@@ -18,10 +18,13 @@ import functools
 import operator
 import re
 from typing import Any
+from typing import Callable
 from typing import Dict
+from typing import Iterator
 from typing import Optional
 from typing import Sequence
 from typing import TYPE_CHECKING
+from typing import Union
 
 import libtorrent as lt
 import pydantic
@@ -268,3 +271,58 @@ class TorrentStatus(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class HexBase(bytes):
+    regex = re.compile(r"[0-9a-f]*$")
+    bits = 0
+
+    @classmethod
+    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+        length = cls.bits // 4
+        field_schema.update(
+            {
+                "type": "string",
+                "format": "hex",
+                "pattern": cls.regex.pattern,
+                "minLength": length,
+                "maxLength": length,
+            }
+        )
+
+    @classmethod
+    def __get_validators__(cls) -> Iterator[Callable[..., Any]]:
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, value: Any) -> bytes:
+        if isinstance(value, bytes):
+            return value
+        if isinstance(value, bytearray):
+            return bytes(value)
+        if isinstance(value, str):
+            length = cls.bits // 4
+            if len(value) < length:
+                raise pydantic.AnyStrMinLengthError(limit_value=length)
+            if len(value) > length:
+                raise pydantic.AnyStrMaxLengthError(limit_value=length)
+            if not cls.regex.match(value):
+                raise pydantic.StrRegexError(pattern=cls.regex.pattern)
+            return bytes.fromhex(value)
+        raise pydantic.BytesError()
+
+
+class Hex160(HexBase):
+    bits = 160
+
+
+def hash_from_digest(digest: bytes) -> Union[lt.sha1_hash, lt.sha256_hash]:
+    if len(digest) == 20:
+        return lt.sha1_hash(digest)
+    if len(digest) == 32:
+        return lt.sha256_hash(digest)
+    raise ValueError(digest)
+
+
+def info_hashes_from_digest(digest: bytes) -> lt.info_hash_t:
+    return lt.info_hash_t(hash_from_digest(digest))
