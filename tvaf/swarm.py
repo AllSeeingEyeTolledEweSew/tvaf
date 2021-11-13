@@ -49,7 +49,6 @@ from typing import Mapping
 import libtorrent as lt
 
 from . import plugins
-from . import torrent_info
 
 ConfigureSwarm = Callable[[lt.add_torrent_params], Awaitable]
 """Configures an add_torrent_params to connect to a swarm.
@@ -140,24 +139,3 @@ async def get_name_to_configure_swarm(
         for task in name_to_task.values():
             task.cancel()
     return name_to_configure_swarm
-
-
-async def _is_known_private(info_hashes: lt.info_hash_t) -> bool:
-    try:
-        return await torrent_info.is_private(info_hashes)
-    except KeyError:
-        return False
-
-
-async def _configure_public(atp: lt.add_torrent_params) -> None:
-    assert not atp.info_hashes.get_best().is_all_zeros()
-    assert atp.ti is None or not atp.ti.priv()
-    # TODO: check trackers against known swarms
-
-
-@access_swarm_plugin("public")
-async def _access_public(info_hashes: lt.info_hash_t) -> ConfigureSwarm:
-    if await _is_known_private(info_hashes):
-        raise KeyError(info_hashes)
-
-    return _configure_public
