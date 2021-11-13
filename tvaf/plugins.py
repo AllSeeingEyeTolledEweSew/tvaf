@@ -84,7 +84,7 @@ class Funcs(Group[_C]):
             value = f"{func.__module__}:{func.__qualname__}"
             for entry_point in _select_eps_group(self.group_name):
                 if entry_point.name == name:
-                    assert entry_point.value == value
+                    assert entry_point.value == value, (entry_point.value, value)
                     break
             else:
                 raise AssertionError(f"[{self.group_name} - {name}] not found")
