@@ -164,3 +164,10 @@ class PublicFallbackTest(SeedTest, lib.TestCase):
         self.assert_golden_json(dict(r.headers), suffix="headers.json")
         self.assertEqual(r.headers["content-length"], str(self.torrent.files[0].length))
         self.assertEqual(r.content, self.torrent.files[0].data)
+
+    async def test_disable(self) -> None:
+        config = await services.get_config()
+        config["public_enable"] = False
+        await services.set_config(config)
+        r = await self.client.get(f"/data/btih/{self.torrent.sha1_hash}/i/0")
+        self.assertEqual(r.status_code, 404)
