@@ -228,7 +228,7 @@ class Torrent:
 
         return configure_atp
 
-    async def get_file_bounds_from_cache(
+    async def map_file(
         self, info_hashes: lt.info_hash_t, file_index: int
     ) -> Tuple[int, int]:
         self._check_info_hashes(info_hashes)

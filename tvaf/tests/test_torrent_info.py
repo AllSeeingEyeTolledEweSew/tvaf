@@ -89,25 +89,25 @@ class TestIsPrivate(TestWithPlugins):
 class TestFileBoundsFromCache(TestWithPlugins):
     async def test_no_plugins(self) -> None:
         with self.assertRaises(KeyError):
-            await torrent_info.get_file_bounds_from_cache(INFO_HASHES, INDEX)
+            await torrent_info.map_file(INFO_HASHES, INDEX)
 
     async def test_keyerror(self) -> None:
         self.fake_eps.add(
             "keyerror",
             btih_index_to_keyerror,
-            "tvaf.torrent_info.get_file_bounds_from_cache",
+            "tvaf.torrent_info.map_file",
         )
         with self.assertRaises(KeyError):
-            await torrent_info.get_file_bounds_from_cache(INFO_HASHES, INDEX)
+            await torrent_info.map_file(INFO_HASHES, INDEX)
 
     async def test_valid(self) -> None:
         self.fake_eps.add(
             "valid",
             btih_index_to_bounds,
-            "tvaf.torrent_info.get_file_bounds_from_cache",
+            "tvaf.torrent_info.map_file",
         )
         self.assertEqual(
-            await torrent_info.get_file_bounds_from_cache(INFO_HASHES, INDEX),
+            await torrent_info.map_file(INFO_HASHES, INDEX),
             BOUNDS,
         )
 
@@ -115,14 +115,14 @@ class TestFileBoundsFromCache(TestWithPlugins):
         self.fake_eps.add(
             "keyerror",
             btih_index_to_keyerror,
-            "tvaf.torrent_info.get_file_bounds_from_cache",
+            "tvaf.torrent_info.map_file",
         )
         self.fake_eps.add(
             "valid",
             btih_index_to_bounds,
-            "tvaf.torrent_info.get_file_bounds_from_cache",
+            "tvaf.torrent_info.map_file",
         )
         self.assertEqual(
-            await torrent_info.get_file_bounds_from_cache(INFO_HASHES, INDEX),
+            await torrent_info.map_file(INFO_HASHES, INDEX),
             BOUNDS,
         )

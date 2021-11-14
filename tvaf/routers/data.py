@@ -110,9 +110,7 @@ class _Helper:
 
             # Get bounds from cache
             try:
-                return await torrent_info.get_file_bounds_from_cache(
-                    self.info_hashes, self.file_index
-                )
+                return await torrent_info.map_file(self.info_hashes, self.file_index)
             except KeyError:
                 pass
 
