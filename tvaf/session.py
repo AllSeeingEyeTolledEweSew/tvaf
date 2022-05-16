@@ -29,7 +29,7 @@ _LOG = logging.getLogger()
 _OVERRIDES = {
     "announce_ip": "",
     "handshake_client_version": "",
-    "alert_queue_size": 2 ** 31 - 1,
+    "alert_queue_size": 2**31 - 1,
 }
 
 _BLACKLIST = {
