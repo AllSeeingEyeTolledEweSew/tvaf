@@ -12,10 +12,9 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 
-import sys
+import importlib.metadata
 from typing import Any
 from typing import Callable
-from typing import cast
 from typing import Dict
 from typing import Generic
 from typing import Iterable
@@ -26,31 +25,21 @@ import warnings
 
 from . import lifecycle
 
-if sys.version_info >= (3, 8):
-    import importlib.metadata as importlib_metadata
-else:
-    import importlib_metadata
 
-
-def _entry_point_key(entry: importlib_metadata.EntryPoint) -> Tuple:
+def _entry_point_key(entry: importlib.metadata.EntryPoint) -> Tuple:
     return (entry.name, entry.value)
 
 
 def _select_eps_group(
     group_name: str,
-) -> Iterable[importlib_metadata.EntryPoint]:
-    eps = importlib_metadata.entry_points()
-    # The importlib_metadata backport has diverged from the stdlib version, and
-    # emits DeprecationWarning if we use the dict interface
-    if sys.version_info >= (3, 8):
-        return eps.get(group_name, ())
-    else:
-        return cast(Tuple[importlib_metadata.EntryPoint], eps.select(group=group_name))
+) -> Iterable[importlib.metadata.EntryPoint]:
+    eps = importlib.metadata.entry_points()
+    return eps.get(group_name, ())
 
 
 @lifecycle.lru_cache(maxsize=256)
 def get(group_name: str) -> Mapping[str, Any]:
-    name_to_entry_point: Dict[str, importlib_metadata.EntryPoint] = {}
+    name_to_entry_point: Dict[str, importlib.metadata.EntryPoint] = {}
     for entry_point in _select_eps_group(group_name):
         name = entry_point.name
         existing = name_to_entry_point.get(name, entry_point)

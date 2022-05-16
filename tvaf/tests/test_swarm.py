@@ -12,8 +12,8 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 import random
+import unittest
 
-from later.unittest.backport import async_case
 import libtorrent as lt
 
 from tvaf import lifecycle
@@ -22,7 +22,7 @@ from tvaf import swarm
 from . import lib
 
 
-class TestPublicSwarm(async_case.IsolatedAsyncioTestCase):
+class TestPublicSwarm(unittest.IsolatedAsyncioTestCase):
     async def test_public_swarm(self) -> None:
         # by default, the public swarm (and only the public swarm) should be
         # configured
@@ -48,7 +48,7 @@ INFO_HASHES = lt.info_hash_t(
 TRACKER = "http://127.0.0.1:12345"
 
 
-class TestWithPlugins(async_case.IsolatedAsyncioTestCase):
+class TestWithPlugins(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         lifecycle.clear()

@@ -14,7 +14,6 @@
 
 import unittest
 
-from later.unittest.backport import async_case
 import libtorrent as lt
 
 from tvaf import config as config_lib
@@ -32,7 +31,7 @@ def _raise_dummy() -> None:
     raise DummyException()
 
 
-class TestSession(async_case.IsolatedAsyncioTestCase):
+class TestSession(unittest.IsolatedAsyncioTestCase):
     @unittest.skip("determining valid settings is broken")
     async def test_session(self) -> None:
         init_alert_mask = lt.alert_category.error | lt.alert_category.peer

@@ -17,8 +17,7 @@ from typing import Any
 from typing import Dict
 from typing import Iterator
 from typing import Tuple
-
-from later.unittest.backport import async_case
+import unittest
 
 from tvaf import concurrency
 
@@ -29,7 +28,7 @@ class DummyException(Exception):
     pass
 
 
-class ToThreadTest(async_case.IsolatedAsyncioTestCase):
+class ToThreadTest(unittest.IsolatedAsyncioTestCase):
     async def test_return_value(self) -> None:
         def return_a_value() -> str:
             return "abc"
@@ -60,7 +59,7 @@ class ToThreadTest(async_case.IsolatedAsyncioTestCase):
         self.assertNotEqual(outside_id, inside_id)
 
 
-class IterInThreadTest(async_case.IsolatedAsyncioTestCase):
+class IterInThreadTest(unittest.IsolatedAsyncioTestCase):
     async def test_return_value(self) -> None:
         def iterator() -> Iterator[int]:
             yield 1
@@ -108,7 +107,7 @@ class IterInThreadTest(async_case.IsolatedAsyncioTestCase):
         self.assertEqual(values, [1])
 
 
-class WaitFirstTest(async_case.IsolatedAsyncioTestCase):
+class WaitFirstTest(unittest.IsolatedAsyncioTestCase):
     async def test_first_completed(self) -> None:
         async def noop() -> None:
             pass
@@ -144,7 +143,7 @@ class WaitFirstTest(async_case.IsolatedAsyncioTestCase):
         self.assertTrue(forever.cancelled())
 
 
-class RefCountTest(async_case.IsolatedAsyncioTestCase):
+class RefCountTest(unittest.IsolatedAsyncioTestCase):
     async def test_count(self) -> None:
         refcount = concurrency.RefCount()
         self.assertEqual(refcount.count(), 0)
@@ -171,7 +170,7 @@ class RefCountTest(async_case.IsolatedAsyncioTestCase):
         await task
 
 
-class AcachedTest(async_case.IsolatedAsyncioTestCase):
+class AcachedTest(unittest.IsolatedAsyncioTestCase):
     async def test_cache(self) -> None:
         cache: Dict = {}
         call_count = 0
@@ -199,7 +198,7 @@ class AcachedTest(async_case.IsolatedAsyncioTestCase):
         self.assertEqual(call_count, 2)
 
 
-class AcachedPropertyTest(async_case.IsolatedAsyncioTestCase):
+class AcachedPropertyTest(unittest.IsolatedAsyncioTestCase):
     async def test_acached_property(self) -> None:
         class Dummy:
             def __init__(self) -> None:
@@ -218,7 +217,7 @@ class AcachedPropertyTest(async_case.IsolatedAsyncioTestCase):
         self.assertEqual(dummy.calls, 1)
 
 
-class AsCompletedTest(async_case.IsolatedAsyncioTestCase):
+class AsCompletedTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         async def returner() -> int:
             return 0
@@ -241,7 +240,7 @@ class AsCompletedTest(async_case.IsolatedAsyncioTestCase):
                 break
 
 
-class AsCompletedCtxTest(async_case.IsolatedAsyncioTestCase):
+class AsCompletedCtxTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         async def returner() -> int:
             return 0

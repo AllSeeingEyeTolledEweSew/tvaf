@@ -38,9 +38,7 @@ repos:
         - libtorrent>=2.0.4,<2.1
         - pydantic>=1.8,<2
         # keep this part in sync with tvaf/tests/test-requirements.txt
-        - importlib-resources>=3.4.0,<5
         - asgi-lifespan>=1.0.0,<2
-        - later>=20.2.1
         - httpx>=0.22.0,<0.23
         - types-requests>=2.0,<3
 - repo: https://gitlab.com/pycqa/flake8.git

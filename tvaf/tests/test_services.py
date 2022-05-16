@@ -16,8 +16,8 @@ import os
 import pathlib
 import tempfile
 from typing import AsyncIterator
+import unittest
 
-from later.unittest.backport import async_case
 import libtorrent as lt
 
 from tvaf import concurrency
@@ -29,7 +29,7 @@ from . import lib
 from . import tdummy
 
 
-class TemporaryDirectoryTestCase(async_case.IsolatedAsyncioTestCase):
+class TemporaryDirectoryTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.cwd = await concurrency.to_thread(pathlib.Path.cwd)
         self.tempdir = await concurrency.to_thread(tempfile.TemporaryDirectory)

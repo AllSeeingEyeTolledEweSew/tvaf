@@ -13,8 +13,7 @@
 
 import asyncio
 import tempfile
-
-from later.unittest.backport import async_case
+import unittest
 
 from tvaf import concurrency
 from tvaf import driver as driver_lib
@@ -24,7 +23,7 @@ from . import lib
 from . import tdummy
 
 
-class RequestServiceTestCase(async_case.IsolatedAsyncioTestCase):
+class RequestServiceTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.torrent = tdummy.DEFAULT
         self.tempdir = await concurrency.to_thread(tempfile.TemporaryDirectory)

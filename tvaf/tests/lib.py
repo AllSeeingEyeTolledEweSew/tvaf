@@ -13,13 +13,12 @@
 
 """Support code for other tests."""
 
-# mypy currently chokes on importlib.resources; typeshed shadows the backported
-# module no matter what I do
-
 
 import collections
 import email.message
 import importlib
+import importlib.metadata
+import importlib.resources
 import io
 import json
 import os
@@ -28,7 +27,6 @@ import sys
 import tempfile
 import time
 from typing import Any
-from typing import cast
 from typing import Dict
 from typing import Iterable
 from typing import Iterator
@@ -42,8 +40,6 @@ import uuid
 
 import asgi_lifespan
 import httpx
-import importlib_resources
-from later.unittest.backport import async_case
 import libtorrent as lt
 
 from tvaf import app as app_lib
@@ -53,11 +49,6 @@ from tvaf import services
 from tvaf import session as session_lib
 
 from . import tdummy
-
-if sys.version_info >= (3, 8):
-    import importlib.metadata as importlib_metadata
-else:
-    import importlib_metadata
 
 
 def create_isolated_config() -> config_lib.Config:
@@ -106,7 +97,7 @@ class TestCase(unittest.TestCase):
 
     def get_meld_path(self, suffix: str) -> str:
         """Returns the path to write to update a golden data file."""
-        # importlib_resources doesn't provide any way for updating files
+        # importlib.resources doesn't provide any way for updating files
         # that are assumed to be individually accessible on the filesystem. So
         # for updating golden data, we use the "naive" approach of referencing
         # a file based off of the __file__ path.
@@ -114,9 +105,9 @@ class TestCase(unittest.TestCase):
 
     def get_data(self, suffix: str) -> str:
         """Returns golden reference data for this test."""
-        files = importlib_resources.files("tvaf.tests.data")
+        files = importlib.resources.files("tvaf.tests.data")
         resource = files / f"{self.id()}.{suffix}"
-        return cast(str, resource.read_text())
+        return resource.read_text()
 
     def assert_golden(self, value: str, suffix: str = "golden.txt") -> None:
         """Asserts a value is equal to golden data, or update the golden data.
@@ -171,13 +162,13 @@ class TestCase(unittest.TestCase):
         self.assert_golden(value_text, suffix=suffix)
 
 
-class _FakeDistribution(importlib_metadata.Distribution):
+class _FakeDistribution(importlib.metadata.Distribution):
     def __init__(self) -> None:
         self._entry_points: Dict[str, List[Tuple[str, str]]] = collections.defaultdict(
             list
         )
         # Some amount of metadata is expected. In particular,
-        # importlib_metadata de-duplicates distributions by name, for some
+        # importlib.metadata de-duplicates distributions by name, for some
         # cases
         self._meta = email.message.Message()
         self._meta["Name"] = uuid.uuid4().hex
@@ -209,19 +200,19 @@ class _FakeDistribution(importlib_metadata.Distribution):
         return None
 
 
-_DEFAULT_CTX = importlib_metadata.DistributionFinder.Context()
+_DEFAULT_CTX = importlib.metadata.DistributionFinder.Context()
 
 
-class _FakeDistributionFinder(importlib_metadata.DistributionFinder):
+class _FakeDistributionFinder(importlib.metadata.DistributionFinder):
     def __init__(
-        self, distributions: Iterable[importlib_metadata.Distribution]
+        self, distributions: Iterable[importlib.metadata.Distribution]
     ) -> None:
         self._distributions = distributions
 
     def find_distributions(
         self,
-        context: importlib_metadata.DistributionFinder.Context = _DEFAULT_CTX,
-    ) -> Iterable[importlib_metadata.Distribution]:
+        context: importlib.metadata.DistributionFinder.Context = _DEFAULT_CTX,
+    ) -> Iterable[importlib.metadata.Distribution]:
         return self._distributions
 
 
@@ -271,7 +262,7 @@ class EntryPointFaker:
         self._dist.add_entry_point(group, name, value)
 
 
-class AppTest(async_case.IsolatedAsyncioTestCase):
+class AppTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.tempdir = await concurrency.to_thread(tempfile.TemporaryDirectory)

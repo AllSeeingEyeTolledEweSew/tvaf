@@ -21,8 +21,8 @@ from typing import Hashable
 from typing import List
 from typing import Set
 from typing import TypeVar
+import unittest
 
-from later.unittest.backport import async_case
 import libtorrent as lt
 
 from tvaf import concurrency
@@ -58,7 +58,7 @@ def atp_comparable(atp: lt.add_torrent_params) -> Dict[bytes, Any]:
 _T = TypeVar("_T")
 
 
-class IterResumeDataTest(async_case.IsolatedAsyncioTestCase):
+class IterResumeDataTest(unittest.IsolatedAsyncioTestCase):
 
     maxDiff = None
 
@@ -146,7 +146,7 @@ class IterResumeDataTest(async_case.IsolatedAsyncioTestCase):
         )
 
 
-class TerminateTest(async_case.IsolatedAsyncioTestCase):
+class TerminateTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.session_service = lib.create_isolated_session_service()
         self.session = self.session_service.session

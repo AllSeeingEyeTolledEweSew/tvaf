@@ -13,8 +13,8 @@
 
 import random
 from typing import Tuple
+import unittest
 
-from later.unittest.backport import async_case
 import libtorrent as lt
 
 from tvaf import lifecycle
@@ -23,7 +23,7 @@ from tvaf import torrent_info
 from . import lib
 
 
-class TestWithPlugins(async_case.IsolatedAsyncioTestCase):
+class TestWithPlugins(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.fake_eps = lib.EntryPointFaker()
