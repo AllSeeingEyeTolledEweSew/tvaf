@@ -144,7 +144,10 @@ class TestDefaultATP(TemporaryDirectoryTestCase):
 
         atp = await services.get_default_atp()
 
-        self.assertEqual(atp.save_path, self.tempdir.name)
+        self.assertEqual(
+            pathlib.Path(atp.save_path).resolve(),
+            pathlib.Path(self.tempdir.name).resolve(),
+        )
         self.assertEqual(
             atp.flags,
             lt.torrent_flags.default_flags & ~lt.torrent_flags.apply_ip_filter,

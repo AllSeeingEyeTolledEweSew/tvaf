@@ -41,7 +41,10 @@ class StatusTest(lib.AppTestWithTorrent, lib.TestCase):
     async def test_get(self) -> None:
         r = await self.client.get(f"/torrents/{self.torrent.sha1_hash}")
         self.assertEqual(r.status_code, 200)
-        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+        # some fields are unstable, so content-length is unstable
+        headers = dict(r.headers)
+        headers.pop("content-length")
+        self.assert_golden_json(headers, suffix="headers.json")
 
         status_dict = r.json()
         # test unstable parts
@@ -79,7 +82,10 @@ class TorrentListTest(lib.AppTestWithTorrent, lib.TestCase):
     async def test_torrent_list(self) -> None:
         r = await self.client.get("/torrents")
         self.assertEqual(r.status_code, 200)
-        self.assert_golden_json(dict(r.headers), suffix="headers.json")
+        # some fields are unstable, so content-length is unstable
+        headers = dict(r.headers)
+        headers.pop("content-length")
+        self.assert_golden_json(headers, suffix="headers.json")
 
         statuses = r.json()
         # test unstable parts
