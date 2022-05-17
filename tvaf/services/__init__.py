@@ -11,6 +11,7 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from __future__ import annotations
 
 import asyncio
 import contextlib
@@ -21,7 +22,6 @@ from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
-from typing import Dict
 
 import libtorrent as lt
 
@@ -276,10 +276,10 @@ async def _shutdown_clear_caches() -> None:
 
 async def _get_atp_defaults_from_config(
     config: config_lib.Config,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     config.setdefault("torrent_default_save_path", str(DEFAULT_DOWNLOAD_PATH))
 
-    atp_defaults: Dict[str, Any] = {}
+    atp_defaults: dict[str, Any] = {}
 
     save_path = pathlib.Path(config.require_str("torrent_default_save_path"))
     try:
@@ -317,7 +317,7 @@ async def _get_atp_defaults_from_config(
 
 
 @lifecycle.asingleton()
-async def _get_atp_defaults() -> Dict[str, Any]:
+async def _get_atp_defaults() -> dict[str, Any]:
     return await _get_atp_defaults_from_config(await get_config())
 
 

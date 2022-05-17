@@ -11,22 +11,21 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from __future__ import annotations
 
 import importlib.metadata
 from typing import Any
 from typing import Callable
-from typing import Dict
 from typing import Generic
 from typing import Iterable
 from typing import Mapping
-from typing import Tuple
 from typing import TypeVar
 import warnings
 
 from . import lifecycle
 
 
-def _entry_point_key(entry: importlib.metadata.EntryPoint) -> Tuple:
+def _entry_point_key(entry: importlib.metadata.EntryPoint) -> tuple:
     return (entry.name, entry.value)
 
 
@@ -39,7 +38,7 @@ def _select_eps_group(
 
 @lifecycle.lru_cache(maxsize=256)
 def get(group_name: str) -> Mapping[str, Any]:
-    name_to_entry_point: Dict[str, importlib.metadata.EntryPoint] = {}
+    name_to_entry_point: dict[str, importlib.metadata.EntryPoint] = {}
     for entry_point in _select_eps_group(group_name):
         name = entry_point.name
         existing = name_to_entry_point.get(name, entry_point)

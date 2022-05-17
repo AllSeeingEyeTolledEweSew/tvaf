@@ -11,11 +11,12 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import logging
 from typing import Iterator
-from typing import List
 
 import fastapi
 import libtorrent as lt
@@ -50,11 +51,11 @@ def translate_exceptions() -> Iterator[None]:
 
 
 @ROUTER.get("/")
-async def get_torrents() -> List[ltmodels.TorrentStatus]:
+async def get_torrents() -> list[ltmodels.TorrentStatus]:
     session = await services.get_session()
     with ltpy.translate_exceptions():
         handles = await concurrency.to_thread(session.get_torrents)
-    status_list: List[ltmodels.TorrentStatus] = []
+    status_list: list[ltmodels.TorrentStatus] = []
     aws = [concurrency.to_thread(h.status, flags=0x7FFFFFFF) for h in handles]
     tasks = [asyncio.create_task(aw) for aw in aws]
     try:
@@ -81,7 +82,7 @@ async def status(info_hash: ltmodels.Hex160) -> ltmodels.TorrentStatus:
 @ROUTER.get("/{info_hash}/piece_priorities")
 async def get_piece_priorities(
     info_hash: ltmodels.Hex160,
-) -> List[int]:
+) -> list[int]:
     handle = await find_torrent(info_hash)
     with translate_exceptions():
         return await concurrency.to_thread(handle.get_piece_priorities)

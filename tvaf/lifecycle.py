@@ -10,15 +10,14 @@
 # LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
+from __future__ import annotations
 
 import functools
 from typing import Any
 from typing import Awaitable
 from typing import Callable
 from typing import cast
-from typing import Dict
 from typing import Generic
-from typing import List
 from typing import TypeVar
 
 import cachetools
@@ -28,7 +27,7 @@ from . import concurrency
 _C = TypeVar("_C", bound=Callable[..., Any])
 _CA = TypeVar("_CA", bound=Callable[..., Awaitable])
 
-_callbacks: List[Callable[[], Any]] = []
+_callbacks: list[Callable[[], Any]] = []
 
 
 class _LRUCacheWrapper(Generic[_C]):
@@ -64,7 +63,7 @@ def alru_cache(*, maxsize: int) -> Callable[[_CA], _LRUCacheWrapper[_CA]]:
 
 def asingleton() -> Callable[[_CA], _LRUCacheWrapper[_CA]]:
     def wrapper(func: _CA) -> _LRUCacheWrapper[_CA]:
-        cache: Dict = {}
+        cache: dict = {}
         wrapped = concurrency.acached(cache)(func)
         wrapped.cache_clear = cache.clear  # type: ignore
         add_clear_callback(cache.clear)

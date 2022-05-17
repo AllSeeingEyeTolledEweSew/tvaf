@@ -71,6 +71,7 @@ Example:
             global_socket.close()
             global_socket = new_socket
 """
+from __future__ import annotations
 
 import contextlib
 import json
@@ -82,7 +83,6 @@ from typing import AsyncIterator
 from typing import Callable
 from typing import MutableMapping
 from typing import Optional
-from typing import Type
 from typing import TypeVar
 from typing import Union
 
@@ -132,7 +132,7 @@ class Config(dict, MutableMapping[str, Any]):
     """A json-compatible dict."""
 
     @classmethod
-    async def from_disk(cls: Type["_C"], path: Union[str, os.PathLike]) -> "_C":
+    async def from_disk(cls: type["_C"], path: Union[str, os.PathLike]) -> "_C":
         """Reads a Config dict from a file.
 
         The file will be parsed as JSON.
@@ -166,13 +166,13 @@ class Config(dict, MutableMapping[str, Any]):
         contents = json.dumps(self, sort_keys=True, indent=4)
         await concurrency.to_thread(path.write_text, contents)
 
-    def _get(self, key: str, type_: Type[_T]) -> Optional[_T]:
+    def _get(self, key: str, type_: type[_T]) -> Optional[_T]:
         value = self.get(key)
         if key in self and not isinstance(value, type_):
             raise InvalidConfigError(f'"{key}": {value!r} is not a {type_}')
         return value
 
-    def _require(self, key: str, type_: Type[_T]) -> _T:
+    def _require(self, key: str, type_: type[_T]) -> _T:
         value = self._get(key, type_)
         if value is None:
             raise InvalidConfigError(f'"{key}": missing')

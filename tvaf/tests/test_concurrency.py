@@ -11,12 +11,12 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from __future__ import annotations
+
 import asyncio
 import threading
 from typing import Any
-from typing import Dict
 from typing import Iterator
-from typing import Tuple
 import unittest
 
 from tvaf import concurrency
@@ -44,7 +44,7 @@ class ToThreadTest(unittest.IsolatedAsyncioTestCase):
             await concurrency.to_thread(raise_dummy)
 
     async def test_pass_args(self) -> None:
-        def return_my_args(*args: Any, **kwargs: Any) -> Tuple[Tuple, Dict[str, Any]]:
+        def return_my_args(*args: Any, **kwargs: Any) -> tuple[tuple, dict[str, Any]]:
             return (args, kwargs)
 
         (args, kwargs) = await concurrency.to_thread(
@@ -91,8 +91,7 @@ class IterInThreadTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_small_batch_size(self) -> None:
         def iterator() -> Iterator[int]:
-            for value in range(100):
-                yield value
+            yield from range(100)
 
         aiterator = concurrency.iter_in_thread(iterator(), batch_size=1)
         values = [value async for value in aiterator]
@@ -172,7 +171,7 @@ class RefCountTest(unittest.IsolatedAsyncioTestCase):
 
 class AcachedTest(unittest.IsolatedAsyncioTestCase):
     async def test_cache(self) -> None:
-        cache: Dict = {}
+        cache: dict = {}
         call_count = 0
 
         @concurrency.acached(cache)

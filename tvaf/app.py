@@ -18,6 +18,7 @@ Example:
 
         python -m uvicorn tvaf.app:APP
 """
+from __future__ import annotations
 
 import fastapi
 

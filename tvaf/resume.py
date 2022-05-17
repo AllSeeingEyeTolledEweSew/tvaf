@@ -25,7 +25,6 @@ from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
 from typing import Coroutine
-from typing import Dict
 from typing import Iterator
 from typing import MutableMapping
 from typing import Optional
@@ -193,7 +192,7 @@ class ResumeService:
         handle: lt.torrent_handle,
         *,
         info_section: bytes = None,
-        resume_data: Dict[bytes, Any] = None,
+        resume_data: dict[bytes, Any] = None,
         ignore_if_exists=False,
     ) -> None:
         info_hash = handle.info_hash()

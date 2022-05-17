@@ -13,6 +13,7 @@
 
 """Support code for other tests."""
 
+from __future__ import annotations
 
 import collections
 import email.message
@@ -27,12 +28,9 @@ import sys
 import tempfile
 import time
 from typing import Any
-from typing import Dict
 from typing import Iterable
 from typing import Iterator
-from typing import List
 from typing import Optional
-from typing import Tuple
 from typing import Union
 import unittest
 import unittest.mock
@@ -164,7 +162,7 @@ class TestCase(unittest.TestCase):
 
 class _FakeDistribution(importlib.metadata.Distribution):
     def __init__(self) -> None:
-        self._entry_points: Dict[str, List[Tuple[str, str]]] = collections.defaultdict(
+        self._entry_points: dict[str, list[tuple[str, str]]] = collections.defaultdict(
             list
         )
         # Some amount of metadata is expected. In particular,
@@ -220,7 +218,7 @@ class EntryPointFaker:
     def __init__(self) -> None:
         self._dist = _FakeDistribution()
         self._finder = _FakeDistributionFinder([self._dist])
-        self._globals: Dict[str, Any] = {}
+        self._globals: dict[str, Any] = {}
         self._enabled = False
 
     def enable(self) -> None:
@@ -237,7 +235,7 @@ class EntryPointFaker:
         for name in self._globals:
             delattr(this_module, name)
 
-    def __enter__(self) -> "EntryPointFaker":
+    def __enter__(self) -> EntryPointFaker:
         self.enable()
         return self
 

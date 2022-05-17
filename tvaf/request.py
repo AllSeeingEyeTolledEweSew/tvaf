@@ -12,6 +12,7 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 """Data access functions for tvaf."""
+from __future__ import annotations
 
 import asyncio
 import collections
@@ -19,11 +20,9 @@ import contextlib
 import logging
 from typing import AsyncGenerator
 from typing import cast
-from typing import Dict
 from typing import MutableMapping
 from typing import Optional
 from typing import Sequence
-from typing import Set
 import weakref
 
 import libtorrent as lt
@@ -81,12 +80,12 @@ class _State:
         self._handle = handle
         self._session = session
         # OrderdDict to preserve FIFO order for prioritizing requests
-        self._reads: Dict[int, asyncio.Future[bytes]] = collections.OrderedDict()
-        self._readers: Dict[int, int] = {}
-        self._prev_time_critical: Set[int] = set()
+        self._reads: dict[int, asyncio.Future[bytes]] = collections.OrderedDict()
+        self._readers: dict[int, int] = {}
+        self._prev_time_critical: set[int] = set()
         self._exc = asyncio.get_event_loop().create_future()
 
-    def _delta_reads(self, prev: Set[int], cur: Set[int]) -> None:
+    def _delta_reads(self, prev: set[int], cur: set[int]) -> None:
         prioritize = False
         # Increment refcount for each new reading piece
         for piece in cur - prev:
@@ -140,7 +139,7 @@ class _State:
         # function, but that had to be synchronous to preserve order for
         # prioritization, and complex call usage is required to avoid holding
         # memory for the lifetime of a request
-        prev_reading: Set[int] = set()
+        prev_reading: set[int] = set()
 
         try:
             for i, piece in enumerate(pieces):

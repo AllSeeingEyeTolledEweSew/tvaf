@@ -11,6 +11,7 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from __future__ import annotations
 
 from tvaf import config as config_lib
 from tvaf import services

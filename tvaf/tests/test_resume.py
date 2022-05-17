@@ -10,16 +10,14 @@
 # LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
+from __future__ import annotations
 
 import asyncio
 import pathlib
 import tempfile
 from typing import Any
 from typing import cast
-from typing import Dict
 from typing import Hashable
-from typing import List
-from typing import Set
 from typing import TypeVar
 import unittest
 
@@ -34,9 +32,9 @@ from . import lib
 from . import tdummy
 
 
-def normalize(bdecoded: Dict[bytes, Any]) -> Dict[bytes, Any]:
+def normalize(bdecoded: dict[bytes, Any]) -> dict[bytes, Any]:
     # This normalizes any preformatted components
-    return cast(Dict[bytes, Any], lt.bdecode(lt.bencode(bdecoded)))
+    return cast(dict[bytes, Any], lt.bdecode(lt.bencode(bdecoded)))
 
 
 def hashable(obj: Any) -> Hashable:
@@ -51,7 +49,7 @@ def atp_hashable(atp: lt.add_torrent_params) -> Hashable:
     return hashable(normalize(lt.write_resume_data(atp)))
 
 
-def atp_comparable(atp: lt.add_torrent_params) -> Dict[bytes, Any]:
+def atp_comparable(atp: lt.add_torrent_params) -> dict[bytes, Any]:
     return normalize(lt.write_resume_data(atp))
 
 
@@ -90,8 +88,8 @@ class IterResumeDataTest(unittest.IsolatedAsyncioTestCase):
 
     def assert_atp_list_equal(
         self,
-        got: List[lt.add_torrent_params],
-        expected: List[lt.add_torrent_params],
+        got: list[lt.add_torrent_params],
+        expected: list[lt.add_torrent_params],
     ) -> None:
         self.assertEqual(
             [atp_comparable(atp) for atp in got],
@@ -100,8 +98,8 @@ class IterResumeDataTest(unittest.IsolatedAsyncioTestCase):
 
     def assert_atp_sets_equal(
         self,
-        got: Set[lt.add_torrent_params],
-        expected: Set[lt.add_torrent_params],
+        got: set[lt.add_torrent_params],
+        expected: set[lt.add_torrent_params],
     ) -> None:
         self.assertEqual(
             {atp_hashable(atp) for atp in got},

@@ -11,11 +11,12 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from __future__ import annotations
+
 import asyncio
 import os
 import pathlib
 import tempfile
-from typing import List
 from typing import Sequence
 import unittest
 
@@ -75,8 +76,8 @@ class TestReadPiecesWithCancellation(request_test_utils.RequestServiceTestCase):
 
 
 class TestReadPieces(request_test_utils.RequestServiceTestCase):
-    async def read(self, pieces: Sequence[int]) -> List[bytes]:
-        result: List[bytes] = []
+    async def read(self, pieces: Sequence[int]) -> list[bytes]:
+        result: list[bytes] = []
         it = self.service.read_pieces(self.handle, pieces)
         async for piece in it:
             result.append(piece)

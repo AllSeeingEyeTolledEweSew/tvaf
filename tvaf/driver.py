@@ -10,6 +10,7 @@
 # LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
+from __future__ import annotations
 
 import asyncio
 import collections
@@ -18,13 +19,9 @@ import logging
 from typing import Any
 from typing import AsyncGenerator
 from typing import Collection
-from typing import Dict
 from typing import Iterable
 from typing import Iterator
-from typing import List
 from typing import Optional
-from typing import Set
-from typing import Type
 import warnings
 
 import libtorrent as lt
@@ -72,7 +69,7 @@ def log_alert(
     method(message, *args)
 
 
-_Type = Type[lt.alert]
+_Type = type[lt.alert]
 
 
 class _Iterator:
@@ -131,15 +128,15 @@ class AlertDriver:
         # current batch of alerts
         self._refcount = concurrency.RefCount()
         # The current batch of alerts, used for iter_alerts(start=...).
-        self._alerts: List[lt.alert] = []
-        self._alert_to_index: Dict[lt.alert, int] = {}
+        self._alerts: list[lt.alert] = []
+        self._alert_to_index: dict[lt.alert, int] = {}
 
         # Iterators indexed by their filter parameters. If type or handle is
         # None, it indicates the type/handle is not filtered, and those
         # iterators should receive all alerts
-        self._type_to_handle_to_iters: Dict[
+        self._type_to_handle_to_iters: dict[
             Optional[_Type],
-            Dict[Optional[lt.torrent_handle], Set[_Iterator]],
+            dict[Optional[lt.torrent_handle], set[_Iterator]],
         ] = collections.defaultdict(lambda: collections.defaultdict(set))
 
         self._rfile, self._wfile = util.selectable_pipe()
@@ -220,7 +217,7 @@ class AlertDriver:
             log_alert(alert)
 
         # Feed alerts to their iterators
-        iter_alerts: Dict[_Iterator, List[lt.alert]] = collections.defaultdict(list)
+        iter_alerts: dict[_Iterator, list[lt.alert]] = collections.defaultdict(list)
         for alert in self._alerts:
             lookup_types = (alert.__class__, None)
             lookup_handles: Collection[Optional[lt.torrent_handle]]

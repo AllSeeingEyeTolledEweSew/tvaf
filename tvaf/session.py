@@ -11,12 +11,13 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from __future__ import annotations
+
 import contextlib
 import logging
 from typing import Any
 from typing import AsyncIterator
 from typing import Collection
-from typing import Dict
 from typing import Iterator
 
 import libtorrent as lt
@@ -47,7 +48,7 @@ def _translate_exceptions() -> Iterator[None]:
         raise config_lib.InvalidConfigError(str(exc)) from exc
 
 
-def parse_config(config: config_lib.Config) -> Dict[str, Any]:
+def parse_config(config: config_lib.Config) -> dict[str, Any]:
     config.setdefault("session_settings_base", "default_settings")
 
     settings_base_name = config.require_str("session_settings_base")
@@ -55,7 +56,7 @@ def parse_config(config: config_lib.Config) -> Dict[str, Any]:
         raise config_lib.InvalidConfigError(
             f'no settings pack named "{settings_base_name}"'
         )
-    settings: Dict[str, Any] = getattr(lt, settings_base_name)()
+    settings: dict[str, Any] = getattr(lt, settings_base_name)()
 
     for key, value in config.items():
         if not key.startswith("session_"):
@@ -95,7 +96,7 @@ def _get_mask_bits(mask: int) -> Collection[int]:
     return bits
 
 
-_ALERT_MASK_NAME: Dict[int, str] = {}
+_ALERT_MASK_NAME: dict[int, str] = {}
 
 
 def _init_alert_mask_name() -> None:
@@ -114,7 +115,7 @@ del _init_alert_mask_name
 
 class SessionService:
     def __init__(self, *, alert_mask: int = 0, config: config_lib.Config = None):
-        self._alert_mask_bit_count: Dict[int, int] = {}
+        self._alert_mask_bit_count: dict[int, int] = {}
         self._inc_alert_mask_bits(alert_mask)
         if config is None:
             config = config_lib.Config()
@@ -157,7 +158,7 @@ class SessionService:
             alert_mask |= 1 << bit
         return alert_mask
 
-    def _apply_settings(self, settings: Dict[str, Any]) -> None:
+    def _apply_settings(self, settings: dict[str, Any]) -> None:
         deltas = dict(set(settings.items()) - set(self._settings.items()))
         if not deltas:
             return
