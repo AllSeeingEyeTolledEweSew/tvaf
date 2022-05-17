@@ -41,7 +41,7 @@ repos:
         - importlib-resources>=3.4.0,<5
         - asgi-lifespan>=1.0.0,<2
         - later>=20.2.1
-        - httpx>=0.20.0,<0.21
+        - httpx>=0.22.0,<0.23
         - types-requests>=2.0,<3
 - repo: https://gitlab.com/pycqa/flake8.git
   rev: 3.9.2
