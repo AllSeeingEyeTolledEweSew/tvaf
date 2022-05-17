@@ -127,7 +127,7 @@ class _ChainedCoroutine:
     async def run(self) -> None:
         await self.coro
         if self.next:
-            asyncio.create_task(self.next)
+            concurrency.create_task(self.next)
 
     def schedule_after(self, other: Optional[_ChainedCoroutine]) -> None:
         if other:
