@@ -22,6 +22,8 @@ import unittest
 
 from tvaf import config as config_lib
 
+from . import lib
+
 
 class TestReadWrite(unittest.TestCase):
     def setUp(self) -> None:
@@ -29,7 +31,7 @@ class TestReadWrite(unittest.TestCase):
         self.path = pathlib.Path(self.tempdir.name) / "config.json"
 
     def tearDown(self) -> None:
-        self.tempdir.cleanup()
+        lib.cleanup_with_windows_fix(self.tempdir, timeout=5)
 
     def test_from_disk(self) -> None:
         self.path.write_text('{"text_field": "value", ' '"numeric_field": 123}')

@@ -13,10 +13,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import datetime
 import errno
 import json
+import sys
 import unittest
 
 import libtorrent as lt
@@ -26,6 +28,11 @@ from tvaf import concurrency
 from tvaf import ltmodels
 
 from . import lib
+
+
+def setUpModule() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 class ErrorCodeTest(unittest.TestCase):

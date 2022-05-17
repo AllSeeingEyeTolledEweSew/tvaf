@@ -14,11 +14,17 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 
 from tvaf import config as config_lib
 from tvaf import services
 
 from . import lib
+
+
+def setUpModule() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 class GetTest(lib.AppTest, lib.TestCase):

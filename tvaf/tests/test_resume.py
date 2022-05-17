@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+import sys
 import tempfile
 from typing import Any
 from typing import cast
@@ -30,6 +31,11 @@ from tvaf import resume as resume_lib
 
 from . import lib
 from . import tdummy
+
+
+def setUpModule() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 def normalize(bdecoded: dict[bytes, Any]) -> dict[bytes, Any]:
@@ -106,8 +112,10 @@ class IterResumeDataTest(unittest.IsolatedAsyncioTestCase):
             {atp_hashable(atp) for atp in expected},
         )
 
-    def tearDown(self) -> None:
-        self.tempdir.cleanup()
+    async def asyncTearDown(self) -> None:
+        await concurrency.to_thread(
+            lib.cleanup_with_windows_fix, self.tempdir, timeout=5
+        )
 
     async def test_normal(self) -> None:
         atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
@@ -165,7 +173,9 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.resume.wait_closed(), 5)
         self.alert_driver.close()
         await asyncio.wait_for(self.alert_driver.wait_closed(), 5)
-        await concurrency.to_thread(self.tempdir.cleanup)
+        await concurrency.to_thread(
+            lib.cleanup_with_windows_fix, self.tempdir, timeout=5
+        )
 
     async def test_mid_download(self) -> None:
         atp = self.torrent.atp()

@@ -13,7 +13,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
+import sys
 import unittest
 
 from tvaf import concurrency
@@ -21,6 +23,11 @@ from tvaf import ltpy
 from tvaf import services
 
 from . import lib
+
+
+def setUpModule() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 class FormatTest(lib.AppTest, lib.TestCase):

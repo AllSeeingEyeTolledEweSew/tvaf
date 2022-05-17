@@ -14,16 +14,23 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import tempfile
 import unittest
 
 import libtorrent as lt
 
+from tvaf import concurrency
 from tvaf import driver as driver_lib
 from tvaf import ltpy
 
 from . import lib
 from . import tdummy
+
+
+def setUpModule() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 class DummyException(Exception):
@@ -49,7 +56,9 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self.driver.close()
         await asyncio.wait_for(self.driver.wait_closed(), 5)
-        self.tempdir.cleanup()
+        await concurrency.to_thread(
+            lib.cleanup_with_windows_fix, self.tempdir, timeout=5
+        )
 
     async def test_see_alert(self) -> None:
         with self.driver.iter_alerts(

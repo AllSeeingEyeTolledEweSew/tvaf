@@ -18,6 +18,7 @@ import io
 import os
 import socket
 import sys
+from typing import BinaryIO
 from typing import Iterator
 
 
@@ -124,7 +125,7 @@ def enum_piecewise_ranges(
         yield piece, r_start, r_stop
 
 
-def selectable_pipe() -> tuple[io.RawIOBase, io.RawIOBase]:
+def selectable_pipe() -> tuple[BinaryIO, BinaryIO]:
     if sys.platform == "win32":
         rsock, wsock = socket.socketpair()
         rsock.setblocking(False)
@@ -133,8 +134,15 @@ def selectable_pipe() -> tuple[io.RawIOBase, io.RawIOBase]:
         # required for an unbuffered object
         rfile = rsock.makefile(mode="rb", buffering=0)
         wfile = wsock.makefile(mode="wb", buffering=0)
+        # NB: makefile() increments a reference counter on the socket. While there are
+        # active file objects, socket.close() just marks the socket for pending
+        # closure. The underlying fd will only be closed after socket.close() *AND*
+        # filelike.close() have both been called, so we call socket.close() now.
+        rsock.close()
+        wsock.close()
         return rfile, wfile
-    rfd, wfd = os.pipe()
-    os.set_blocking(rfd, False)
-    os.set_blocking(wfd, False)
-    return io.FileIO(rfd, mode="rb"), io.FileIO(wfd, mode="wb")
+    else:
+        rfd, wfd = os.pipe()
+        os.set_blocking(rfd, False)
+        os.set_blocking(wfd, False)
+        return io.FileIO(rfd, mode="rb"), io.FileIO(wfd, mode="wb")

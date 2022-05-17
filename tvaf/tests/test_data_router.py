@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import tempfile
 import unittest
 
@@ -21,6 +22,11 @@ from tvaf import services
 
 from . import lib
 from . import tdummy
+
+
+def setUpModule() -> None:
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 class FormatTest(lib.AppTest, lib.TestCase):
@@ -144,7 +150,9 @@ class SeedTest(lib.AppTest):
 
     async def asyncTearDown(self) -> None:
         await super().asyncTearDown()
-        await concurrency.to_thread(self.seed_dir.cleanup)
+        await concurrency.to_thread(
+            lib.cleanup_with_windows_fix, self.seed_dir, timeout=5
+        )
 
 
 class PublicFallbackTest(SeedTest, lib.TestCase):

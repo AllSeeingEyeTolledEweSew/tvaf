@@ -241,6 +241,14 @@ async def _shutdown_drain_alerts() -> None:
     await alert_driver.wait_closed()
 
 
+@shutdown_plugin("97_session")
+async def _shutdown_clean_session() -> None:
+    session = await get_session()
+    handles = await concurrency.to_thread(session.get_torrents)
+    for handle in handles:
+        session.remove_torrent(handle)
+
+
 @shutdown_plugin("98_clear")
 async def _shutdown_clear_caches() -> None:
     lifecycle.clear()
