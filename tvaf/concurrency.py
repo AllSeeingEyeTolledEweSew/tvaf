@@ -225,8 +225,19 @@ class _AcachedProperty(Generic[_T]):
             return self
         attrs = instance.__dict__
         if self._name not in attrs:
-            attrs[self._name] = asyncio.create_task(self._func(instance))
+            attrs[self._name] = create_task(self._func(instance))
         return attrs[self._name]
+
+
+def create_task(aw: Awaitable[_T]) -> asyncio.Task[_T]:
+    """Returns a scheduled asyncio.Task. Compatible with non-coroutines."""
+    if asyncio.iscoroutine(aw):
+        return asyncio.create_task(aw)
+
+    async def _wrapper() -> _T:
+        return await aw
+
+    return asyncio.create_task(_wrapper())
 
 
 # This could be 'class acached_property', but this setup helps linters

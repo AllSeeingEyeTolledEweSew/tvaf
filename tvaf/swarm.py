@@ -39,7 +39,6 @@ faster downloads, but this will require modifications to libtorrent, and design
 input and opt-in from tracker administrators about how this would work.
 """
 
-import asyncio
 import contextlib
 from typing import Awaitable
 from typing import Callable
@@ -48,6 +47,7 @@ from typing import Mapping
 
 import libtorrent as lt
 
+from . import concurrency
 from . import plugins
 
 ConfigureSwarm = Callable[[lt.add_torrent_params], Awaitable]
@@ -127,7 +127,7 @@ async def get_name_to_configure_swarm(
     """
     # Runs all AccessSwarm functions in parallel
     name_to_task = {
-        name: asyncio.create_task(access(info_hashes))
+        name: concurrency.create_task(access(info_hashes))
         for name, access in get_name_to_access_swarm().items()
     }
     name_to_configure_swarm: Dict[str, ConfigureSwarm] = {}
