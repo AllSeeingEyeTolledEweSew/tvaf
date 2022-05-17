@@ -11,12 +11,13 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from __future__ import annotations
+
 import logging
 from typing import AsyncIterator
 from typing import Iterator
 from typing import Optional
 from typing import Sequence
-from typing import Tuple
 from typing import TypeVar
 from typing import Union
 
@@ -68,7 +69,7 @@ class NotModifiedResponse(starlette.responses.Response):
 _T = TypeVar("_T")
 
 
-def _get_bounds_from_ti(ti: lt.torrent_info, file_index: int) -> Tuple[int, int]:
+def _get_bounds_from_ti(ti: lt.torrent_info, file_index: int) -> tuple[int, int]:
     fs = ti.files()
     if file_index >= fs.num_files():
         raise IndexError(file_index)
@@ -101,7 +102,7 @@ class _Helper:
         return await services_util.get_torrent_info(await self.valid_handle)
 
     @concurrency.acached_property
-    async def bounds(self) -> Tuple[int, int]:
+    async def bounds(self) -> tuple[int, int]:
         try:
             # If the torrent exists and has metadata, get bounds from that
             existing_ti = await self.existing_torrent_info

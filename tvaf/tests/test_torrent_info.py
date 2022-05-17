@@ -10,11 +10,11 @@
 # LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
+from __future__ import annotations
 
 import random
-from typing import Tuple
+import unittest
 
-from later.unittest.backport import async_case
 import libtorrent as lt
 
 from tvaf import lifecycle
@@ -23,7 +23,7 @@ from tvaf import torrent_info
 from . import lib
 
 
-class TestWithPlugins(async_case.IsolatedAsyncioTestCase):
+class TestWithPlugins(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.fake_eps = lib.EntryPointFaker()
@@ -60,7 +60,7 @@ async def btih_index_to_keyerror(info_hashes: lt.info_hash_t, index: int) -> Non
 
 async def btih_index_to_bounds(
     info_hashes: lt.info_hash_t, index: int
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     assert info_hashes == INFO_HASHES
     assert index == INDEX
     return BOUNDS

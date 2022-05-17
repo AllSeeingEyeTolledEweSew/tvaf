@@ -10,6 +10,7 @@
 # LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
+from __future__ import annotations
 
 import base64
 import datetime
@@ -19,7 +20,6 @@ import operator
 import re
 from typing import Any
 from typing import Callable
-from typing import Dict
 from typing import Iterator
 from typing import Optional
 from typing import Sequence
@@ -47,7 +47,7 @@ class ErrorCode(BaseModel):
         orm_mode = True
 
         @classmethod
-        def getter_dict(cls, ec: lt.error_code) -> Dict:
+        def getter_dict(cls, ec: lt.error_code) -> dict:
             return {
                 "category": ec.category().name(),
                 "value": ec.value(),
@@ -68,10 +68,9 @@ class Sha1Hash(pydantic.ConstrainedStr):
     regex = re.compile(r"^[a-f0-9]{40}$")
 
     @classmethod
-    def __get_validators__(cls) -> "CallableGenerator":
+    def __get_validators__(cls) -> CallableGenerator:
         yield cls.validate_orm
-        for validator in super().__get_validators__():
-            yield validator
+        yield from super().__get_validators__()
 
     @classmethod
     def validate_orm(cls, value: Any) -> Any:
@@ -87,10 +86,9 @@ class Sha256Hash(pydantic.ConstrainedStr):
     regex = re.compile(r"^[a-f0-9]{64}$")
 
     @classmethod
-    def __get_validators__(cls) -> "CallableGenerator":
+    def __get_validators__(cls) -> CallableGenerator:
         yield cls.validate_orm
-        for validator in super().__get_validators__():
-            yield validator
+        yield from super().__get_validators__()
 
     @classmethod
     def validate_orm(cls, value: Any) -> Any:
@@ -124,15 +122,14 @@ class InfoHashes(BaseModel):
 
 class Base64(pydantic.ConstrainedBytes):
     @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+    def __modify_schema__(cls, field_schema: dict[str, Any]) -> None:
         pydantic.ConstrainedBytes.__modify_schema__(field_schema)
         field_schema.update(type="string", format="byte")
 
     @classmethod
-    def __get_validators__(cls) -> "CallableGenerator":
+    def __get_validators__(cls) -> CallableGenerator:
         yield cls.parse_base64
-        for validator in super().__get_validators__():
-            yield validator
+        yield from super().__get_validators__()
 
     @classmethod
     def parse_base64(cls, value: Any) -> Any:
@@ -150,7 +147,7 @@ class TorrentState(enum.Enum):
     CHECKING_RESUME_DATA = "checking_resume_data"
 
     @classmethod
-    def __get_validators__(cls) -> "CallableGenerator":
+    def __get_validators__(cls) -> CallableGenerator:
         yield cls._from_lt
 
     @classmethod
@@ -165,7 +162,7 @@ class StorageMode(enum.Enum):
     ALLOCATE = "allocate"
 
     @classmethod
-    def __get_validators__(cls) -> "CallableGenerator":
+    def __get_validators__(cls) -> CallableGenerator:
         yield cls._from_lt
 
     @classmethod
@@ -276,7 +273,7 @@ class HexBase(bytes):
     bits = 0
 
     @classmethod
-    def __modify_schema__(cls, field_schema: Dict[str, Any]) -> None:
+    def __modify_schema__(cls, field_schema: dict[str, Any]) -> None:
         length = cls.bits // 4
         field_schema.update(
             {

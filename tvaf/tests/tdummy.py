@@ -11,15 +11,13 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from __future__ import annotations
+
 import hashlib
 import random
 from typing import Any
 from typing import Callable
-from typing import Dict
-from typing import List
 from typing import Optional
-from typing import Tuple
-from typing import Type
 from typing import TypeVar
 from typing import Union
 
@@ -52,7 +50,7 @@ class _FParams(TypedDict, total=False):
     length: int
     data: Optional[bytes]
     path: Optional[bytes]
-    path_split: Optional[List[bytes]]
+    path_split: Optional[list[bytes]]
     attr: Optional[bytes]
 
 
@@ -65,8 +63,8 @@ class File:
         stop: int,
         data: bytes = None,
         path: bytes = None,
-        path_split: List[bytes] = None,
-        attr: bytes = None
+        path_split: list[bytes] = None,
+        attr: bytes = None,
     ):
         assert stop - start == length, (start, stop, length)
         if data is not None:
@@ -102,13 +100,13 @@ _T = TypeVar("_T", bound="Torrent")
 class Torrent:
     @classmethod
     def single_file(
-        cls: Type[_T],
+        cls: type[_T],
         *,
         length: int,
         piece_length: int = 16384,
         name: bytes = None,
         attr: bytes = None,
-        data: bytes = None
+        data: bytes = None,
     ) -> _T:
         return cls(
             piece_length=piece_length,
@@ -117,11 +115,11 @@ class Torrent:
             ],
         )
 
-    def __init__(self, *, files: List[_FParams], piece_length: int = 16384):
+    def __init__(self, *, files: list[_FParams], piece_length: int = 16384):
         assert piece_length is not None
 
         self.piece_length = piece_length
-        self.files: List[File] = []
+        self.files: list[File] = []
 
         offset = 0
         for file_ in files:
@@ -132,9 +130,9 @@ class Torrent:
         self.length = sum(f.length for f in self.files)
 
         self._data: Optional[bytes] = None
-        self._pieces: Optional[List[bytes]] = None
-        self._info: Optional[Dict[bytes, Any]] = None
-        self._dict: Optional[Dict[bytes, Any]] = None
+        self._pieces: Optional[list[bytes]] = None
+        self._info: Optional[dict[bytes, Any]] = None
+        self._dict: Optional[dict[bytes, Any]] = None
         self._info_hash_bytes: Optional[bytes] = None
 
     @property
@@ -144,7 +142,7 @@ class Torrent:
         return self._data
 
     @property
-    def pieces(self) -> List[bytes]:
+    def pieces(self) -> list[bytes]:
         if self._pieces is None:
             self._pieces = [
                 self.data[i : i + self.piece_length]
@@ -153,7 +151,7 @@ class Torrent:
         return self._pieces
 
     @property
-    def info(self) -> Dict[bytes, Any]:
+    def info(self) -> dict[bytes, Any]:
         if self._info is None:
             self._info = {
                 b"piece length": self.piece_length,
@@ -179,7 +177,7 @@ class Torrent:
         return self._info
 
     @property
-    def dict(self) -> Dict[bytes, Any]:
+    def dict(self) -> dict[bytes, Any]:
         if self._dict is None:
             self._dict = {
                 b"info": self.info,
@@ -230,7 +228,7 @@ class Torrent:
 
     async def map_file(
         self, info_hashes: lt.info_hash_t, file_index: int
-    ) -> Tuple[int, int]:
+    ) -> tuple[int, int]:
         self._check_info_hashes(info_hashes)
         file_info = self.files[file_index]
         return (file_info.start, file_info.stop)

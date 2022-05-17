@@ -12,11 +12,10 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 """Utilities for serving HTTP byte-range requests according to RFC 7233."""
+from __future__ import annotations
 
 import re
 from typing import Any
-from typing import Dict
-from typing import List
 from typing import Sequence
 import uuid
 
@@ -59,7 +58,7 @@ def parse_bytes_range(value: str) -> Sequence[slice]:
     """
     if not value.startswith("bytes="):
         raise ValueError(value)
-    result: List[slice] = []
+    result: list[slice] = []
     for spec in value[6:].split(","):
         m = _RANGE_RE.match(spec.strip())
         if not m:
@@ -170,7 +169,7 @@ class ByteRangesResponse(starlette.responses.Response):
         self,
         slices: Sequence[slice],
         *,
-        headers: Dict = None,
+        headers: dict = None,
         content: Any = None,
         media_type: str = None,
     ) -> None:

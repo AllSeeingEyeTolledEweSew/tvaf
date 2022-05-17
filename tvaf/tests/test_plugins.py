@@ -11,7 +11,8 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-import sys
+from __future__ import annotations
+
 import unittest
 import unittest.mock
 
@@ -19,11 +20,6 @@ from tvaf import lifecycle
 from tvaf import plugins
 
 from . import lib
-
-if sys.version_info >= (3, 8):
-    pass
-else:
-    pass
 
 
 def return_a() -> str:

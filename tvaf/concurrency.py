@@ -26,11 +26,9 @@ from typing import cast
 from typing import Generic
 from typing import Iterable
 from typing import Iterator
-from typing import List
 from typing import MutableMapping
 from typing import Optional
 from typing import overload
-from typing import Type
 from typing import TypeVar
 
 import cachetools.keys
@@ -86,7 +84,7 @@ async def iter_in_thread(iterator: Iterator[_T], batch_size=100) -> AsyncIterato
         Objects from the input iterator.
     """
 
-    def iter_batch() -> List[_T]:
+    def iter_batch() -> list[_T]:
         return list(itertools.islice(iterator, batch_size))
 
     while True:
@@ -213,11 +211,11 @@ class _AcachedProperty(Generic[_T]):
         self._name = name
 
     @overload
-    def __get__(self, instance: None, owner: Type = None) -> _AcachedProperty[_T]:
+    def __get__(self, instance: None, owner: type = None) -> _AcachedProperty[_T]:
         ...
 
     @overload
-    def __get__(self, instance: object, owner: Type = None) -> Awaitable[_T]:
+    def __get__(self, instance: object, owner: type = None) -> Awaitable[_T]:
         ...
 
     def __get__(self, instance: Any, owner: Any = None) -> Any:
@@ -260,7 +258,7 @@ def acached_property(func: Callable[[Any], Awaitable[_T]]) -> _AcachedProperty[_
     return _AcachedProperty(func)
 
 
-async def alist(it: AsyncIterator[_T]) -> List[_T]:
+async def alist(it: AsyncIterator[_T]) -> list[_T]:
     """Returns an AsyncIterator as a list."""
     return [item async for item in it]
 

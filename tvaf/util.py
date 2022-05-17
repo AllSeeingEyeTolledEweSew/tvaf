@@ -12,13 +12,13 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 """Utility functions for tvaf."""
+from __future__ import annotations
 
 import io
 import os
 import socket
 import sys
 from typing import Iterator
-from typing import Tuple
 
 
 def bitmap_is_set(bitmap: bytes, i: int) -> bool:
@@ -33,7 +33,7 @@ def iter_bitmap(bitmap: bytes, start: int, stop: int) -> Iterator[bool]:
         yield bitmap_is_set(bitmap, i)
 
 
-def range_to_pieces(piece_length: int, start: int, stop: int) -> Tuple[int, int]:
+def range_to_pieces(piece_length: int, start: int, stop: int) -> tuple[int, int]:
     """Converts a range of bytes to a range of pieces.
 
     Pieces are assumed to be zero-aligned.
@@ -56,7 +56,7 @@ def range_to_pieces(piece_length: int, start: int, stop: int) -> Tuple[int, int]
 
 def enum_piece_is_set(
     bitmap: bytes, piece_length: int, start: int, stop: int
-) -> Iterator[Tuple[int, bool]]:
+) -> Iterator[tuple[int, bool]]:
     """Yields a (piece, is_set) tuple for each piece of a byte range.
 
     The given byte range (start, stop) is converted to a piece range. For every
@@ -100,7 +100,7 @@ def iter_piece_is_set(
 
 def enum_piecewise_ranges(
     piece_length: int, start: int, stop: int
-) -> Iterator[Tuple[int, int, int]]:
+) -> Iterator[tuple[int, int, int]]:
     """Splits a byte range into smaller piece-aligned ranges.
 
     The given byte range (start, stop) is split into smaller sub-ranges, such
@@ -124,7 +124,7 @@ def enum_piecewise_ranges(
         yield piece, r_start, r_stop
 
 
-def selectable_pipe() -> Tuple[io.RawIOBase, io.RawIOBase]:
+def selectable_pipe() -> tuple[io.RawIOBase, io.RawIOBase]:
     if sys.platform == "win32":
         rsock, wsock = socket.socketpair()
         rsock.setblocking(False)

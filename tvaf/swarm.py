@@ -39,10 +39,11 @@ faster downloads, but this will require modifications to libtorrent, and design
 input and opt-in from tracker administrators about how this would work.
 """
 
+from __future__ import annotations
+
 import contextlib
 from typing import Awaitable
 from typing import Callable
-from typing import Dict
 from typing import Mapping
 
 import libtorrent as lt
@@ -130,7 +131,7 @@ async def get_name_to_configure_swarm(
         name: concurrency.create_task(access(info_hashes))
         for name, access in get_name_to_access_swarm().items()
     }
-    name_to_configure_swarm: Dict[str, ConfigureSwarm] = {}
+    name_to_configure_swarm: dict[str, ConfigureSwarm] = {}
     try:
         for name, task in name_to_task.items():
             with contextlib.suppress(KeyError):

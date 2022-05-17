@@ -11,9 +11,10 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from __future__ import annotations
+
 import logging
 from typing import Any
-from typing import Dict
 
 import fastapi
 import starlette.responses
@@ -32,5 +33,5 @@ async def get() -> config_lib.Config:
 
 
 @ROUTER.post("/")
-async def post(config: Dict[str, Any]) -> None:
+async def post(config: dict[str, Any]) -> None:
     await services.set_config(config_lib.Config(config))

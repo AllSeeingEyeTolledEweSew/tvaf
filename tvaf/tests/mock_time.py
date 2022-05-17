@@ -10,11 +10,11 @@
 # LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
+from __future__ import annotations
 
 import threading
 from typing import Any
 from typing import ContextManager
-from typing import List
 from typing import Optional
 from typing import SupportsFloat
 import unittest.mock
@@ -45,7 +45,7 @@ class MockTime(ContextManager["MockTime"]):
         self._monotonic = 0.0
         self._autoincrement = float(autoincrement)
         assert self._autoincrement >= 0
-        self._patches: List[unittest.mock._patch] = []
+        self._patches: list[unittest.mock._patch] = []
         self._started = False
 
     def get_mock_time(self) -> float:
@@ -95,7 +95,7 @@ class MockTime(ContextManager["MockTime"]):
     def patch_condition(self, cond: threading.Condition):
         return self.patch_object(cond, "wait", new=self.wait)
 
-    def __enter__(self) -> "MockTime":
+    def __enter__(self) -> MockTime:
         """Returns itself after enabling all time function patches."""
         self._started = True
         self.patch("time.time", new=self.time)

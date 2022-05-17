@@ -11,10 +11,12 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from __future__ import annotations
+
 import asyncio
 import tempfile
+import unittest
 
-from later.unittest.backport import async_case
 import libtorrent as lt
 
 from tvaf import driver as driver_lib
@@ -33,7 +35,7 @@ class DummyException(Exception):
 # which refer to alerts in many cases, including StopIteration.
 
 
-class IterAlertsTest(async_case.IsolatedAsyncioTestCase):
+class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.session_service = lib.create_isolated_session_service()
         self.session = self.session_service.session

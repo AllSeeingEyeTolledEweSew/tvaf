@@ -12,6 +12,7 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 """Tests for the tvaf.util module."""
+from __future__ import annotations
 
 import select
 import selectors

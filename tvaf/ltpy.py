@@ -10,17 +10,15 @@
 # LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
+from __future__ import annotations
 
 import builtins
 import contextlib
 import enum
 import errno
 import os
-from typing import Dict
 from typing import Generator
 from typing import Optional
-from typing import Tuple
-from typing import Type
 from typing import TypeVar
 
 import libtorrent as lt
@@ -93,7 +91,7 @@ class OSError(Error, builtins.OSError):
         # Furthermore, when __new__ and __init__ are overridden in an OSError
         # subclass, then it expects to be initialized using __new__, and
         # super(builtins.OSError, self).__init__.
-        args: Tuple = ()
+        args: tuple = ()
         if os.name == "nt" and cat == SYSTEM_CATEGORY:
             args = (0, ec.message(), None, ec.value())
         else:
@@ -195,7 +193,7 @@ _C = TypeVar("_C", bound=LibtorrentError)
 
 class InvalidTorrentHandleError(LibtorrentError):
     @classmethod
-    def create(cls: Type[_C]) -> _C:
+    def create(cls: type[_C]) -> _C:
         ec = lt.error_code(
             LibtorrentErrorValue.INVALID_TORRENT_HANDLE,
             lt.libtorrent_category(),
@@ -290,7 +288,7 @@ def exception_from_alert(alert: lt.alert) -> Optional[Exception]:
     return exception_from_error_code(ec)
 
 
-_error_code_msg_lookup: Dict[str, Dict[lt.error_category, int]] = {}
+_error_code_msg_lookup: dict[str, dict[lt.error_category, int]] = {}
 
 
 def _init_error_code_msg_lookup() -> None:
