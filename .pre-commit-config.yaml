@@ -2,7 +2,7 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 - repo: https://github.com/Lucas-C/pre-commit-hooks
-  rev: v1.1.14
+  rev: v1.2.0
   hooks:
     - id: insert-license
       args: [--license-filepath, LICENSE]
