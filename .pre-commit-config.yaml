@@ -44,7 +44,7 @@ repos:
         - pydantic>=1.8,<2
         # keep this part in sync with tvaf/tests/test-requirements.txt
         - asgi-lifespan>=1.0.0,<2
-        - httpx>=0.22.0,<0.23
+        - httpx>=1.0.0.beta0,<2
         - types-requests>=2.0,<3
 - repo: https://gitlab.com/pycqa/flake8.git
   rev: 3.9.2
