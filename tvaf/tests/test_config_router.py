@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from tvaf import config as config_lib
 from tvaf import services
 
@@ -23,13 +25,15 @@ class GetTest(lib.AppTest, lib.TestCase):
     async def test_get(self) -> None:
         r = await self.client.get("/config")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json(), await services.get_config())
+        self.assertEqual(r.json(), await asyncio.wait_for(services.get_config(), 5))
 
 
 class PostTest(lib.AppTest, lib.TestCase):
     async def test_get(self) -> None:
-        config = config_lib.Config(await services.get_config())
+        config = config_lib.Config(await asyncio.wait_for(services.get_config(), 5))
         config["test"] = "test"
         r = await self.client.post("/config", json=config)
         self.assertEqual(r.status_code, 200)
-        self.assertEqual((await services.get_config())["test"], "test")
+        self.assertEqual(
+            (await asyncio.wait_for(services.get_config(), 5))["test"], "test"
+        )

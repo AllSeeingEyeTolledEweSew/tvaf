@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import collections
 import email.message
 import importlib
@@ -271,14 +272,24 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
         self.lifespan_manager = asgi_lifespan.LifespanManager(
             app_lib.APP, startup_timeout=None, shutdown_timeout=None
         )
-        await self.lifespan_manager.__aenter__()
+        await asyncio.wait_for(self.lifespan_manager.__aenter__(), 5)
+
+        # https://github.com/encode/httpx/issues/2239: httpx doesn't honor timeouts for
+        # ASGI/WSGI
+
+        async def app_with_timeout(*args) -> None:
+            await asyncio.wait_for(app_lib.APP(*args), 5)
+
         self.client = httpx.AsyncClient(
-            app=app_lib.APP, base_url="http://test", follow_redirects=True
+            app=app_with_timeout,
+            base_url="http://test",
+            follow_redirects=True,
+            timeout=5,
         )
 
     async def asyncTearDown(self) -> None:
         await self.client.aclose()
-        await self.lifespan_manager.__aexit__(None, None, None)
+        await asyncio.wait_for(self.lifespan_manager.__aexit__(None, None, None), 5)
         await concurrency.to_thread(os.chdir, self.cwd)
         await concurrency.to_thread(self.tempdir.cleanup)
 
@@ -290,10 +301,10 @@ class AppTestWithTorrent(AppTest):
 
         atp = self.torrent.atp()
         atp.save_path = self.tempdir.name
-        session = await services.get_session()
+        session = await asyncio.wait_for(services.get_session(), 5)
         self.handle = await concurrency.to_thread(session.add_torrent, atp)
         # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
         # checking silently fails in libtorrent 1.2.8.
-        await wait_done_checking_or_error(self.handle)
+        await asyncio.wait_for(wait_done_checking_or_error(self.handle), 5)
         for i, piece in enumerate(self.torrent.pieces):
             self.handle.add_piece(i, piece, 0)

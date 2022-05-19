@@ -19,8 +19,7 @@ import email.policy
 from typing import cast
 import unittest
 
-import requests
-import starlette.testclient
+import httpx
 
 from tvaf import byteranges
 
@@ -71,7 +70,7 @@ class ParseBytesRangeTest(unittest.TestCase):
         self.assertEqual(slices, [slice(1, 3), slice(3, 5)])
 
 
-def response_to_msg(resp: requests.Response) -> email.message.EmailMessage:
+def response_to_msg(resp: httpx.Response) -> email.message.EmailMessage:
     parser = email.parser.BytesFeedParser(policy=email.policy.HTTP)
     for name, value in resp.headers.items():
         parser.feed(name.encode("latin-1"))
@@ -83,29 +82,29 @@ def response_to_msg(resp: requests.Response) -> email.message.EmailMessage:
     return cast(email.message.EmailMessage, parser.close())
 
 
-class ByteRangesResponseTest(unittest.TestCase):
-    def test_single_with_body(self) -> None:
+class ByteRangesResponseTest(unittest.IsolatedAsyncioTestCase):
+    async def test_single_with_body(self) -> None:
         content = bytes(range(256))
         app = byteranges.ByteRangesResponse(
             [slice(100, 200)], content=content, media_type="test/test"
         )
-        client = starlette.testclient.TestClient(app)
-        resp = client.get("/")
+        client = httpx.AsyncClient(app=app, base_url="http://test", timeout=5)
+        resp = await client.get("http://test")
         self.assertEqual(resp.status_code, 206)
         self.assertEqual(resp.headers["content-length"], "100")
         self.assertEqual(resp.headers["content-type"], "test/test")
         self.assertEqual(resp.headers["content-range"], "bytes 100-199/256")
         self.assertEqual(resp.content, bytes(range(100, 200)))
 
-    def test_multi_with_body(self) -> None:
+    async def test_multi_with_body(self) -> None:
         content = bytes(range(256))
         app = byteranges.ByteRangesResponse(
             [slice(10, 50), slice(100, 150)],
             content=content,
             media_type="application/octet-stream",
         )
-        client = starlette.testclient.TestClient(app)
-        resp = client.get("/")
+        client = httpx.AsyncClient(app=app, base_url="http://test", timeout=5)
+        resp = await client.get("http://test")
         self.assertEqual(resp.status_code, 206)
         self.assertNotIn("content-range", resp.headers)
         self.assertEqual(resp.headers["content-length"], str(len(resp.content)))
