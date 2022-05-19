@@ -38,13 +38,13 @@ repos:
     - id: mypy
       additional_dependencies:
         # keep this part in sync with setup.cfg
-        - types-cachetools>=2.0.0,<5
-        - fastapi>=0.70.0,<0.71
+        - types-cachetools>=2.0.0,<6
+        - fastapi>=0.78.0,<0.79
         - libtorrent>=2.0.4,<2.1
         - pydantic>=1.8,<2
         # keep this part in sync with tvaf/tests/test-requirements.txt
         - asgi-lifespan>=1.0.0,<2
-        - httpx>=0.22.0,<0.23
+        - httpx>=1.0.0.beta0,<2
         - types-requests>=2.0,<3
 - repo: https://gitlab.com/pycqa/flake8.git
   rev: 3.9.2

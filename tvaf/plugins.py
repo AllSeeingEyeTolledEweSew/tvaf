@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import sys
 from typing import Any
 from typing import Callable
 from typing import Generic
@@ -32,8 +33,11 @@ def _entry_point_key(entry: importlib.metadata.EntryPoint) -> tuple:
 def _select_eps_group(
     group_name: str,
 ) -> Iterable[importlib.metadata.EntryPoint]:
-    eps = importlib.metadata.entry_points()
-    return eps.get(group_name, ())
+    if sys.version_info >= (3, 10):
+        return importlib.metadata.entry_points(group=group_name)
+    else:
+        eps = importlib.metadata.entry_points()
+        return eps.get(group_name, ())
 
 
 @lifecycle.lru_cache(maxsize=256)

@@ -19,13 +19,14 @@ from typing import Any
 from typing import Sequence
 import uuid
 
-import starlette.concurrency
 from starlette.datastructures import Headers
 from starlette.datastructures import MutableHeaders
 import starlette.responses
 from starlette.types import Receive
 from starlette.types import Scope
 from starlette.types import Send
+
+from . import concurrency
 
 _RANGE_RE = re.compile(r"(\d+)?-(\d+)?")
 
@@ -301,7 +302,6 @@ class ByteRangesResponse(starlette.responses.Response):
             receive: The ASGI receive callback.
             send: The ASGI send callback.
         """
-        await starlette.concurrency.run_until_first_complete(
-            (self._stream_response, {"scope": scope, "send": send}),
-            (self._listen_for_disconnect, {"receive": receive}),
+        await concurrency.first(
+            (self._stream_response(scope, send), self._listen_for_disconnect(receive))
         )
