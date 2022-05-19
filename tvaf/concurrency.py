@@ -314,3 +314,18 @@ def as_completed_ctx(
     finally:
         for task in tasks:
             task.cancel()
+
+
+async def first(aws: Iterable[Awaitable[_T]]) -> _T:
+    """Returns the result of the first awaitable to complete, and cancels the others.
+
+    Args:
+        aws: Awaitables to run.
+
+    Returns:
+        The result of the first awaitable.
+    """
+    with as_completed_ctx(aws) as iterator:
+        for future in iterator:
+            return await future
+    raise AssertionError("not reachable")
