@@ -37,6 +37,7 @@ from .. import services
 from .. import swarm
 from .. import torrent_info
 from .. import util
+from ..services import atp as atp_services
 from ..services import util as services_util
 
 ROUTER = fastapi.APIRouter(prefix="/d", tags=["data access"])
@@ -143,10 +144,10 @@ class _Helper:
         if existing.is_valid():
             return existing
         configure_swarm = await self.configure_swarm
-        atp = await services.get_default_atp()
+        atp = await atp_services.get_default()
         atp.info_hashes = self.info_hashes
         await configure_swarm(atp)
-        await services.configure_atp(atp)
+        await atp_services.configure(atp)
         atp.flags &= ~lt.torrent_flags.duplicate_is_error
         session = await services.get_session()
         # TODO: check against the requested network

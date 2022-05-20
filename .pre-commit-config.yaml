@@ -71,6 +71,7 @@ repos:
           tvaf/routers/__init__.py|
           tvaf/routers/torrent.py|
           tvaf/services/__init__.py|
+          tvaf/services/atp.py|
           tvaf/services/util.py|
           tvaf/session.py|
           tvaf/spaceman.py|

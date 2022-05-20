@@ -26,6 +26,7 @@ from tvaf import concurrency
 from tvaf import config as config_lib
 from tvaf import resume as resume_lib
 from tvaf import services
+from tvaf.services import atp as atp_services
 
 from . import lib
 from . import tdummy
@@ -127,7 +128,7 @@ class TestDefaultATP(TemporaryDirectoryTestCase):
         config = await services.get_config()
         self.assertEqual(config["torrent_default_save_path"], save_path)
 
-        atp = await services.get_default_atp()
+        atp = await atp_services.get_default()
 
         self.assertEqual(atp.save_path, save_path)
         self.assertEqual(atp.flags, lt.torrent_flags.default_flags)
@@ -142,7 +143,7 @@ class TestDefaultATP(TemporaryDirectoryTestCase):
         )
         await services.set_config(config)
 
-        atp = await services.get_default_atp()
+        atp = await atp_services.get_default()
 
         self.assertEqual(
             pathlib.Path(atp.save_path).resolve(),
