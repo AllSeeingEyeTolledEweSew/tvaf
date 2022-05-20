@@ -17,7 +17,6 @@ import asyncio
 import contextlib
 import logging
 import pathlib
-from typing import Any
 from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import Awaitable
@@ -38,7 +37,6 @@ _LOG = logging.getLogger(__name__)
 
 CONFIG_PATH = pathlib.Path("config.json")
 RESUME_DATA_PATH = pathlib.Path("resume")
-DEFAULT_DOWNLOAD_PATH = pathlib.Path("download")
 
 
 Startup = Callable[[], Awaitable]
@@ -77,32 +75,6 @@ async def set_config(config: config_lib.Config):
     async with stage_config(config):
         _LOG.debug("config: new config staged, will update...")
     _LOG.info("config: updated")
-
-
-DefaultATP = Callable[[lt.add_torrent_params], Awaitable]
-_DEFAULT_ATP_FUNCS: plugins.Funcs[DefaultATP] = plugins.Funcs(
-    "tvaf.services.default_atp"
-)
-default_atp_plugin = _DEFAULT_ATP_FUNCS.decorator
-
-
-async def get_default_atp() -> lt.add_torrent_params:
-    atp = lt.add_torrent_params()
-    for _, func in sorted(_DEFAULT_ATP_FUNCS.get().items()):
-        await func(atp)
-    return atp
-
-
-ConfigureATP = Callable[[lt.add_torrent_params], Awaitable]
-_CONFIGURE_ATP_FUNCS: plugins.Funcs[ConfigureATP] = plugins.Funcs(
-    "tvaf.services.configure_atp"
-)
-configure_atp_plugin = _CONFIGURE_ATP_FUNCS.decorator
-
-
-async def configure_atp(atp: lt.add_torrent_params) -> None:
-    for _, func in sorted(_CONFIGURE_ATP_FUNCS.get().items()):
-        await func(atp)
 
 
 _process_locked = False
@@ -272,73 +244,3 @@ async def _shutdown_drain_alerts() -> None:
 @shutdown_plugin("98_clear")
 async def _shutdown_clear_caches() -> None:
     lifecycle.clear()
-
-
-async def _get_atp_defaults_from_config(
-    config: config_lib.Config,
-) -> dict[str, Any]:
-    config.setdefault("torrent_default_save_path", str(DEFAULT_DOWNLOAD_PATH))
-
-    atp_defaults: dict[str, Any] = {}
-
-    save_path = pathlib.Path(config.require_str("torrent_default_save_path"))
-    try:
-        # Raises RuntimeError on symlink loops
-        save_path = await concurrency.to_thread(save_path.resolve)
-    except RuntimeError as exc:
-        raise config_lib.InvalidConfigError(str(exc)) from exc
-
-    config["torrent_default_save_path"] = str(save_path)
-    atp_defaults["save_path"] = str(save_path)
-
-    name_to_flag = {
-        "apply_ip_filter": lt.torrent_flags.apply_ip_filter,
-    }
-
-    for name, flag in name_to_flag.items():
-        key = f"torrent_default_flags_{name}"
-        value = config.get_bool(key)
-        if value is None:
-            continue
-        atp_defaults.setdefault("flags", lt.torrent_flags.default_flags)
-        if value:
-            atp_defaults["flags"] |= flag
-        else:
-            atp_defaults["flags"] &= ~flag
-
-    maybe_name = config.get_str("torrent_default_storage_mode")
-    if maybe_name is not None:
-        full_name = f"storage_mode_{maybe_name}"
-        mode = lt.storage_mode_t.names.get(full_name)
-        if mode is None:
-            raise config_lib.InvalidConfigError(f"invalid storage mode {maybe_name}")
-        atp_defaults["storage_mode"] = mode
-    return atp_defaults
-
-
-@lifecycle.asingleton()
-async def _get_atp_defaults() -> dict[str, Any]:
-    return await _get_atp_defaults_from_config(await get_config())
-
-
-@startup_plugin("10_default_atp")
-async def _startup_config_default_atp() -> None:
-    # Parse existing config
-    await _get_atp_defaults()
-
-
-@stage_config_plugin("50_default_atp")
-@contextlib.asynccontextmanager
-async def _stage_config_default_atp(
-    config: config_lib.Config,
-) -> AsyncIterator[None]:
-    await _get_atp_defaults_from_config(config)
-    yield
-    _get_atp_defaults.cache_clear()
-
-
-@default_atp_plugin("50_config")
-async def _default_atp_from_config(atp: lt.add_torrent_params) -> None:
-    defaults = await _get_atp_defaults()
-    for key, value in defaults.items():
-        setattr(atp, key, value)
