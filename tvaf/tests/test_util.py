@@ -145,6 +145,8 @@ class TestSelectablePipe(unittest.TestCase):
         wfile.write(b"\0")
         result = select.select((rfile,), (), ())
         self.assertEqual(result, ([rfile], [], []))
+        rfile.close()
+        wfile.close()
 
     def test_select_write_from_thread(self) -> None:
         rfile, wfile = util.selectable_pipe()
@@ -157,6 +159,8 @@ class TestSelectablePipe(unittest.TestCase):
         threading.Thread(target=write_from_thread).start()
         result = select.select((rfile,), (), ())
         self.assertEqual(result, ([rfile], [], []))
+        rfile.close()
+        wfile.close()
 
     def test_default_selector_write_before(self) -> None:
         rfile, wfile = util.selectable_pipe()
@@ -167,6 +171,8 @@ class TestSelectablePipe(unittest.TestCase):
         self.assertEqual(len(events), 1)
         key, _ = events[0]
         self.assertEqual(key.fileobj, rfile)
+        rfile.close()
+        wfile.close()
 
     def test_default_selector_write_from_thread(self) -> None:
         rfile, wfile = util.selectable_pipe()
@@ -183,3 +189,5 @@ class TestSelectablePipe(unittest.TestCase):
         self.assertEqual(len(events), 1)
         key, _ = events[0]
         self.assertEqual(key.fileobj, rfile)
+        rfile.close()
+        wfile.close()
