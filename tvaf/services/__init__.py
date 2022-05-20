@@ -161,21 +161,21 @@ def _stage_config_lock(_: config_lib.Config) -> AsyncContextManager:
 async def _stage_config_disk(config: config_lib.Config) -> AsyncIterator[None]:
     tmp_path = CONFIG_PATH.with_suffix(".tmp")
     await config.write_to_disk(tmp_path)
-    _LOG.debug("config: staged at %s", tmp_path)
+    _LOG.debug("config: staged at %s", tmp_path.resolve())
     try:
         yield
         try:
             await concurrency.to_thread(tmp_path.replace, CONFIG_PATH)
-            _LOG.info("config: wrote %s", CONFIG_PATH)
+            _LOG.info("config: wrote %s", CONFIG_PATH.resolve())
         except OSError:
-            _LOG.exception("couldn't write %s", CONFIG_PATH)
+            _LOG.exception("couldn't write %s", CONFIG_PATH.resolve())
     finally:
         try:
             await concurrency.to_thread(tmp_path.unlink)
         except FileNotFoundError:
             pass
         except OSError:
-            _LOG.exception("can't unlink temp file %s", tmp_path)
+            _LOG.exception("can't unlink temp file %s", tmp_path.resolve())
 
 
 @stage_config_plugin("90_global")
