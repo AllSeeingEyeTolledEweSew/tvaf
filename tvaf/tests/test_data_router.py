@@ -12,6 +12,7 @@
 # PERFORMANCE OF THIS SOFTWARE.
 from __future__ import annotations
 
+import asyncio
 import tempfile
 
 from tvaf import concurrency
@@ -134,7 +135,7 @@ class SeedTest(lib.AppTest):
         handle = await concurrency.to_thread(self.seed.add_torrent, atp)
         # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
         # checking silently fails in libtorrent 1.2.8.
-        await lib.wait_done_checking_or_error(handle)
+        await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 5)
         for i, piece in enumerate(self.torrent.pieces):
             handle.add_piece(i, piece, 0)
         self.seed_endpoint = ("127.0.0.1", self.seed.listen_port())
@@ -152,7 +153,7 @@ class PublicFallbackTest(SeedTest, lib.TestCase):
         config = await services.get_config()
         config["session_dht_bootstrap_nodes"] = self.seed_endpoint_str
         config["session_enable_dht"] = True
-        await services.set_config(config)
+        await asyncio.wait_for(services.set_config(config), 5)
 
     async def test_head(self) -> None:
         r = await self.client.head(f"/d/btih/{self.torrent.sha1_hash}/i/0")
@@ -170,6 +171,6 @@ class PublicFallbackTest(SeedTest, lib.TestCase):
     async def test_disable(self) -> None:
         config = await services.get_config()
         config["public_enable"] = False
-        await services.set_config(config)
+        await asyncio.wait_for(services.set_config(config), 5)
         r = await self.client.get(f"/d/btih/{self.torrent.sha1_hash}/i/0")
         self.assertEqual(r.status_code, 404)
