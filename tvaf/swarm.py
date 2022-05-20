@@ -128,7 +128,7 @@ async def get_name_to_configure_swarm(
     """
     # Runs all AccessSwarm functions in parallel
     name_to_task = {
-        name: concurrency.create_task(access(info_hashes))
+        name: concurrency.ensure_future(access(info_hashes))
         for name, access in get_name_to_access_swarm().items()
     }
     name_to_configure_swarm: dict[str, ConfigureSwarm] = {}

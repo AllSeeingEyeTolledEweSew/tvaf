@@ -22,7 +22,6 @@ import pathlib
 import re
 from typing import Any
 from typing import AsyncIterator
-from typing import Awaitable
 from typing import Callable
 from typing import Coroutine
 from typing import Iterator
@@ -121,12 +120,12 @@ def _delete(path: pathlib.Path) -> None:
 class _ChainedCoroutine:
     def __init__(self, coro: Coroutine) -> None:
         self.coro = coro
-        self.next: Optional[Awaitable] = None
+        self.next: Optional[Coroutine] = None
 
     async def run(self) -> None:
         await self.coro
         if self.next:
-            concurrency.create_task(self.next)
+            asyncio.create_task(self.next)
 
     def schedule_after(self, other: Optional[_ChainedCoroutine]) -> None:
         if other:

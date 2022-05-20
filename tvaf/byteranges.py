@@ -302,6 +302,6 @@ class ByteRangesResponse(starlette.responses.Response):
             receive: The ASGI receive callback.
             send: The ASGI send callback.
         """
-        await concurrency.first(
+        await concurrency.wait_first(
             (self._stream_response(scope, send), self._listen_for_disconnect(receive))
         )
