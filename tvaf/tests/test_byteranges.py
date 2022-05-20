@@ -88,13 +88,15 @@ class ByteRangesResponseTest(unittest.IsolatedAsyncioTestCase):
         app = byteranges.ByteRangesResponse(
             [slice(100, 200)], content=content, media_type="test/test"
         )
-        client = httpx.AsyncClient(app=app, base_url="http://test", timeout=5)
-        resp = await client.get("http://test")
-        self.assertEqual(resp.status_code, 206)
-        self.assertEqual(resp.headers["content-length"], "100")
-        self.assertEqual(resp.headers["content-type"], "test/test")
-        self.assertEqual(resp.headers["content-range"], "bytes 100-199/256")
-        self.assertEqual(resp.content, bytes(range(100, 200)))
+        async with httpx.AsyncClient(
+            app=app, base_url="http://test", timeout=5
+        ) as client:
+            resp = await client.get("http://test")
+            self.assertEqual(resp.status_code, 206)
+            self.assertEqual(resp.headers["content-length"], "100")
+            self.assertEqual(resp.headers["content-type"], "test/test")
+            self.assertEqual(resp.headers["content-range"], "bytes 100-199/256")
+            self.assertEqual(resp.content, bytes(range(100, 200)))
 
     async def test_multi_with_body(self) -> None:
         content = bytes(range(256))
@@ -103,21 +105,23 @@ class ByteRangesResponseTest(unittest.IsolatedAsyncioTestCase):
             content=content,
             media_type="application/octet-stream",
         )
-        client = httpx.AsyncClient(app=app, base_url="http://test", timeout=5)
-        resp = await client.get("http://test")
-        self.assertEqual(resp.status_code, 206)
-        self.assertNotIn("content-range", resp.headers)
-        self.assertEqual(resp.headers["content-length"], str(len(resp.content)))
+        async with httpx.AsyncClient(
+            app=app, base_url="http://test", timeout=5
+        ) as client:
+            resp = await client.get("http://test")
+            self.assertEqual(resp.status_code, 206)
+            self.assertNotIn("content-range", resp.headers)
+            self.assertEqual(resp.headers["content-length"], str(len(resp.content)))
 
-        msg = response_to_msg(resp)
-        self.assertEqual(msg.defects, [])
-        self.assertEqual(msg.get_content_type(), "multipart/byteranges")
-        parts = list(msg.iter_parts())
-        part0 = cast(email.message.EmailMessage, parts[0])
-        self.assertEqual(part0["content-type"], "application/octet-stream")
-        self.assertEqual(part0["content-range"], "bytes 10-49/256")
-        self.assertEqual(part0.get_content(), bytes(range(10, 50)))
-        part1 = cast(email.message.EmailMessage, parts[1])
-        self.assertEqual(part1["content-type"], "application/octet-stream")
-        self.assertEqual(part1["content-range"], "bytes 100-149/256")
-        self.assertEqual(part1.get_content(), bytes(range(100, 150)))
+            msg = response_to_msg(resp)
+            self.assertEqual(msg.defects, [])
+            self.assertEqual(msg.get_content_type(), "multipart/byteranges")
+            parts = list(msg.iter_parts())
+            part0 = cast(email.message.EmailMessage, parts[0])
+            self.assertEqual(part0["content-type"], "application/octet-stream")
+            self.assertEqual(part0["content-range"], "bytes 10-49/256")
+            self.assertEqual(part0.get_content(), bytes(range(10, 50)))
+            part1 = cast(email.message.EmailMessage, parts[1])
+            self.assertEqual(part1["content-type"], "application/octet-stream")
+            self.assertEqual(part1["content-range"], "bytes 100-149/256")
+            self.assertEqual(part1.get_content(), bytes(range(100, 150)))
