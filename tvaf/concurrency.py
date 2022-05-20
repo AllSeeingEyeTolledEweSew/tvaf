@@ -17,6 +17,7 @@ import asyncio
 import contextlib
 import contextvars
 import functools
+import inspect
 import itertools
 from typing import Any
 from typing import AsyncIterator
@@ -107,7 +108,7 @@ async def wait_first(aws: Iterable[Awaitable]) -> None:
         Any exceptions raised by the first completed task, including
         asyncio.CancelledError.
     """
-    tasks = [asyncio.ensure_future(aw) for aw in aws]
+    tasks = [ensure_future(aw) for aw in aws]
     try:
         (done, pending) = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     except asyncio.CancelledError:
@@ -223,19 +224,47 @@ class _AcachedProperty(Generic[_T]):
             return self
         attrs = instance.__dict__
         if self._name not in attrs:
-            attrs[self._name] = create_task(self._func(instance))
+            attrs[self._name] = ensure_future(self._func(instance))
         return attrs[self._name]
 
 
-def create_task(aw: Awaitable[_T]) -> asyncio.Task[_T]:
-    """Returns a scheduled asyncio.Task. Compatible with non-coroutines."""
+def ensure_future(aw: Awaitable[_T]) -> asyncio.Future[_T]:
+    """Schedules any awaitable as a task.
+
+    This utility function is modeled after the behavior of asyncio.ensure_future()
+    (for versions >=3.5.1 and <3.10), which is being deprecated for some reason.
+
+    If the input is a coroutine (tested with asyncio.iscoroutine()), the return value
+    will be a task scheduled with asyncio.create_task().
+
+    If the input is an asyncio.Future (tested with asyncio.isfuture()), it is returned
+    directly.
+
+    If the input is any awaitable (tested with inspect.isawaitable()), it is wrapped in
+    a coroutine, scheduled as a task and returned.
+
+    Any other value will raise TypeError.
+
+    Args:
+        aw: Any awaitable.
+
+    Returns:
+        A scheduled asyncio.Task.
+
+    Raises:
+        TypeError: If aw is not one of the supported types.
+    """
     if asyncio.iscoroutine(aw):
         return asyncio.create_task(aw)
+    if asyncio.isfuture(aw):
+        return aw
+    if inspect.isawaitable(aw):
 
-    async def _wrapper() -> _T:
-        return await aw
+        async def _wrapper() -> _T:
+            return await aw
 
-    return asyncio.create_task(_wrapper())
+        return asyncio.create_task(_wrapper())
+    raise TypeError("An asyncio.Future, a coroutine, or an awaitable is required")
 
 
 # This could be 'class acached_property', but this setup helps linters
@@ -281,7 +310,7 @@ async def as_completed(
     Returns:
         An iterator of futures, in completion order.
     """
-    tasks = {asyncio.ensure_future(aw) for aw in aws}
+    tasks = {ensure_future(aw) for aw in aws}
     try:
         for future in asyncio.as_completed(tasks):
             yield future
@@ -308,24 +337,9 @@ def as_completed_ctx(
         will represent the results of the input awaitables, in completion
         order.
     """
-    tasks = {asyncio.ensure_future(aw) for aw in aws}
+    tasks = {ensure_future(aw) for aw in aws}
     try:
         yield asyncio.as_completed(tasks)
     finally:
         for task in tasks:
             task.cancel()
-
-
-async def first(aws: Iterable[Awaitable[_T]]) -> _T:
-    """Returns the result of the first awaitable to complete, and cancels the others.
-
-    Args:
-        aws: Awaitables to run.
-
-    Returns:
-        The result of the first awaitable.
-    """
-    with as_completed_ctx(aws) as iterator:
-        for future in iterator:
-            return await future
-    raise AssertionError("not reachable")
