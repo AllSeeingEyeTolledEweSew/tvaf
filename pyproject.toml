@@ -8,3 +8,7 @@ build-backend = "setuptools.build_meta"
 profile = "google"
 single_line_exclusions = []
 known_third_party = ["libtorrent"]
+
+[tool.pytest.ini_options]
+filterwarnings = "error"
+addopts = "-rw"
