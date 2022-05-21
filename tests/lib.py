@@ -104,7 +104,7 @@ class TestCase(unittest.TestCase):
 
     def get_data(self, suffix: str) -> str:
         """Returns golden reference data for this test."""
-        files = importlib.resources.files("tvaf.tests.data")
+        files = importlib.resources.files("tests.data")
         resource = files / f"{self.id()}.{suffix}"
         return resource.read_text()
 
