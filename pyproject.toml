@@ -12,3 +12,4 @@ known_third_party = ["libtorrent"]
 [tool.pytest.ini_options]
 filterwarnings = "error"
 addopts = "-rw"
+asyncio_mode = "auto"
