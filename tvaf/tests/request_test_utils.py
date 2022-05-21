@@ -51,7 +51,9 @@ class RequestServiceTestCase(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.service.wait_closed(), 5)
         self.alert_driver.close()
         await asyncio.wait_for(self.alert_driver.wait_closed(), 5)
-        await concurrency.to_thread(self.tempdir.cleanup)
+        await concurrency.to_thread(
+            lib.cleanup_with_windows_fix, self.tempdir, timeout=5
+        )
 
     async def feed_pieces(self) -> None:
         piece_indexes = list(range(len(self.torrent.pieces)))

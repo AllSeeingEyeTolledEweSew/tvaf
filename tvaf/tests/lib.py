@@ -291,7 +291,7 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
         await self.client.aclose()
         await asyncio.wait_for(self.lifespan_manager.__aexit__(None, None, None), 5)
         await concurrency.to_thread(os.chdir, self.cwd)
-        await concurrency.to_thread(self.tempdir.cleanup)
+        await concurrency.to_thread(cleanup_with_windows_fix, self.tempdir, timeout=5)
 
 
 class AppTestWithTorrent(AppTest):
@@ -308,3 +308,40 @@ class AppTestWithTorrent(AppTest):
         await asyncio.wait_for(wait_done_checking_or_error(self.handle), 5)
         for i, piece in enumerate(self.torrent.pieces):
             self.handle.add_piece(i, piece, 0)
+
+
+# In test cases where libtorrent writes torrent data in a temporary directory,
+# cleaning up the tempdir on Windows CI sometimes fails with a PermissionError
+# having WinError 5 (Access Denied). I can't repro this WinError in any way;
+# holding an open file handle results in a different WinError. Seems to be a
+# race condition which only happens with very short-lived tests which write
+# data. Work around by cleaning up the tempdir in a loop.
+
+
+def unlink_all_files(path: str) -> None:
+    for dirpath, _, filenames in os.walk(path):
+        for filename in filenames:
+            filepath = os.path.join(dirpath, filename)
+            os.unlink(filepath)
+
+
+# TODO: why is this necessary?
+def cleanup_with_windows_fix(
+    tempdir: tempfile.TemporaryDirectory, *, timeout: float
+) -> None:
+    # Clean up just the files, so we don't have to bother with depth-first
+    # traversal
+    for _ in loop_until_timeout(timeout, msg="PermissionError clear"):
+        try:
+            unlink_all_files(tempdir.name)
+        except PermissionError as exc:
+            if sys.platform == "win32":
+                # current release of mypy doesn't know about winerror
+                if exc.winerror == 5:
+                    continue
+            raise
+        break
+    # This removes directories in depth-first traversal.
+    # It also marks the tempdir as explicitly cleaned so it doesn't trigger a
+    # ResourceWarning.
+    tempdir.cleanup()

@@ -132,7 +132,9 @@ class TestReadPieces(request_test_utils.RequestServiceTestCase):
             # The peer connection takes a long time, not sure why
             pieces = await asyncio.wait_for(self.read(self.all_pieces), 60)
         finally:
-            await concurrency.to_thread(seed_dir.cleanup)
+            await concurrency.to_thread(
+                lib.cleanup_with_windows_fix, seed_dir, timeout=5
+            )
         self.assertEqual(pieces, self.torrent.pieces)
 
     async def test_read_checked_pieces(self) -> None:
