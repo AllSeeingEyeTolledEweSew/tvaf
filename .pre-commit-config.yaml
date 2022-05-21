@@ -46,6 +46,7 @@ repos:
         - asgi-lifespan>=1.0.0,<2
         - httpx>=1.0.0.beta0,<2
         - types-requests>=2.0,<3
+        - pytest>=7,<8
 - repo: https://gitlab.com/pycqa/flake8.git
   rev: 3.9.2
   hooks:
@@ -57,7 +58,7 @@ repos:
     - id: pydocstyle
       exclude: |
         (?x)^(
-          .*/test_.*\.py|
+          tests/.*\.py|
           src/tvaf/driver.py|
           src/tvaf/__init__.py|
           src/tvaf/lifecycle.py|
@@ -75,12 +76,6 @@ repos:
           src/tvaf/services/util.py|
           src/tvaf/session.py|
           src/tvaf/spaceman.py|
-          tests/data/__init__.py|
-          tests/__init__.py|
-          tests/lib.py|
-          tests/mock_time.py|
-          tests/request_test_utils.py|
-          tests/tdummy.py|
           src/tvaf/torrent_info.py|
           src/tvaf/util.py|
           src/tvaf/xmemoryview.py

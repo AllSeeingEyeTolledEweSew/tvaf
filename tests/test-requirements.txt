@@ -1,3 +1,4 @@
 asgi-lifespan>=1.0.0,<2
 httpx>=1.0.0.beta0,<2
 requests>=2.0,<3
+pytest>=7,<8
