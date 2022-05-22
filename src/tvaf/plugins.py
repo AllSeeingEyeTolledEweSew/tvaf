@@ -23,7 +23,7 @@ from typing import Mapping
 from typing import TypeVar
 import warnings
 
-from . import lifecycle
+from tvaf import caches
 
 
 def _entry_point_key(entry: importlib.metadata.EntryPoint) -> tuple:
@@ -40,7 +40,7 @@ def _select_eps_group(
         return eps.get(group_name, ())
 
 
-@lifecycle.lru_cache(maxsize=256)
+@caches.lru_cache(maxsize=256)
 def get(group_name: str) -> Mapping[str, Any]:
     name_to_entry_point: dict[str, importlib.metadata.EntryPoint] = {}
     for entry_point in _select_eps_group(group_name):

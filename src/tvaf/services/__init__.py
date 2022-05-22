@@ -24,10 +24,11 @@ from typing import Callable
 
 import libtorrent as lt
 
+from tvaf import caches
+
 from .. import concurrency
 from .. import config as config_lib
 from .. import driver as driver_lib
-from .. import lifecycle
 from .. import plugins
 from .. import request as request_lib
 from .. import resume as resume_lib
@@ -80,7 +81,7 @@ async def set_config(config: config_lib.Config):
 _process_locked = False
 
 
-@lifecycle.asingleton()
+@caches.asingleton()
 async def get_config() -> config_lib.Config:
     try:
         return await config_lib.Config.from_disk(CONFIG_PATH)
@@ -88,22 +89,22 @@ async def get_config() -> config_lib.Config:
         return config_lib.Config()
 
 
-@lifecycle.asingleton()
+@caches.asingleton()
 async def get_session_service() -> session_lib.SessionService:
     return session_lib.SessionService(config=await get_config())
 
 
-@lifecycle.asingleton()
+@caches.asingleton()
 async def get_session() -> lt.session:
     return (await get_session_service()).session
 
 
-@lifecycle.asingleton()
+@caches.asingleton()
 async def get_alert_driver() -> driver_lib.AlertDriver:
     return driver_lib.AlertDriver(session_service=await get_session_service())
 
 
-@lifecycle.asingleton()
+@caches.asingleton()
 async def get_resume_service() -> resume_lib.ResumeService:
     return resume_lib.ResumeService(
         session=await get_session(),
@@ -112,7 +113,7 @@ async def get_resume_service() -> resume_lib.ResumeService:
     )
 
 
-@lifecycle.asingleton()
+@caches.asingleton()
 async def get_request_service() -> request_lib.RequestService:
     return request_lib.RequestService(
         alert_driver=await get_alert_driver(),
@@ -243,4 +244,4 @@ async def _shutdown_drain_alerts() -> None:
 
 @shutdown_plugin("98_clear")
 async def _shutdown_clear_caches() -> None:
-    lifecycle.clear()
+    caches.clear()

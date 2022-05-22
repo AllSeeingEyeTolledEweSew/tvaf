@@ -18,7 +18,7 @@ import unittest
 import libtorrent as lt
 
 from tests import epfake
-from tvaf import lifecycle
+from tvaf import caches
 from tvaf import swarm
 
 
@@ -51,14 +51,14 @@ TRACKER = "http://127.0.0.1:12345"
 class TestWithPlugins(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        lifecycle.clear()
+        caches.clear()
         self.fake_eps = epfake.EntryPointFaker()
         self.fake_eps.enable()
 
     async def asyncTearDown(self) -> None:
         await super().asyncTearDown()
         self.fake_eps.disable()
-        lifecycle.clear()
+        caches.clear()
 
 
 async def configure_all(atp: lt.add_torrent_params) -> None:

@@ -23,9 +23,10 @@ from typing import Callable
 
 import libtorrent as lt
 
+from tvaf import caches
+
 from .. import concurrency
 from .. import config as config_lib
-from .. import lifecycle
 from .. import plugins
 from .. import services
 
@@ -99,7 +100,7 @@ async def _get_defaults_from_config(
     return defaults
 
 
-@lifecycle.asingleton()
+@caches.asingleton()
 async def _get_defaults() -> dict[str, Any]:
     return await _get_defaults_from_config(await services.get_config())
 

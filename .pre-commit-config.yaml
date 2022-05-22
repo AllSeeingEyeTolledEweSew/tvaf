@@ -61,7 +61,7 @@ repos:
           tests/.*\.py|
           src/tvaf/driver.py|
           src/tvaf/__init__.py|
-          src/tvaf/lifecycle.py|
+          src/tvaf/caches.py|
           src/tvaf/ltmodels.py|
           src/tvaf/ltpy.py|
           src/tvaf/plugins.py|
