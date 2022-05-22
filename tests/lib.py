@@ -16,26 +16,18 @@
 from __future__ import annotations
 
 import asyncio
-import collections
-import email.message
 import importlib
 import importlib.metadata
 import importlib.resources
-import io
 import json
 import os
 import pathlib
-import sys
 import tempfile
 import time
 from typing import Any
-from typing import Iterable
 from typing import Iterator
-from typing import Optional
-from typing import Union
 import unittest
 import unittest.mock
-import uuid
 
 import asgi_lifespan
 import httpx
@@ -159,106 +151,6 @@ class TestCase(unittest.TestCase):
         kwargs["sort_keys"] = True
         value_text = json.dumps(value, **kwargs)
         self.assert_golden(value_text, suffix=suffix)
-
-
-class _FakeDistribution(importlib.metadata.Distribution):
-    def __init__(self) -> None:
-        self._entry_points: dict[str, list[tuple[str, str]]] = collections.defaultdict(
-            list
-        )
-        # Some amount of metadata is expected. In particular,
-        # importlib.metadata de-duplicates distributions by name, for some
-        # cases
-        self._meta = email.message.Message()
-        self._meta["Name"] = uuid.uuid4().hex
-        self._meta["Metadata-Version"] = "2.1"
-        self._meta["Version"] = "1.0"
-
-    def add_entry_point(self, group: str, name: str, value: str) -> None:
-        self._entry_points[group].append((name, value))
-
-    def locate_file(self, path: Union[str, os.PathLike]) -> os.PathLike:
-        return pathlib.Path("__DOES_NOT_EXIST__").joinpath(path)
-
-    def read_text(self, filename: str) -> Optional[str]:
-        if filename == "entry_points.txt":
-            fp = io.StringIO()
-            for group, name_values in self._entry_points.items():
-                fp.write("[")
-                fp.write(group)
-                fp.write("]\n")
-                for name, value in name_values:
-                    fp.write(name)
-                    fp.write(" = ")
-                    fp.write(value)
-                    fp.write("\n")
-                fp.write("\n")
-            return fp.getvalue()
-        if filename == "PKG-INFO":
-            return self._meta.as_string()
-        return None
-
-
-_DEFAULT_CTX = importlib.metadata.DistributionFinder.Context()
-
-
-class _FakeDistributionFinder(importlib.metadata.DistributionFinder):
-    def __init__(
-        self, distributions: Iterable[importlib.metadata.Distribution]
-    ) -> None:
-        self._distributions = distributions
-
-    def find_distributions(
-        self,
-        context: importlib.metadata.DistributionFinder.Context = _DEFAULT_CTX,
-    ) -> Iterable[importlib.metadata.Distribution]:
-        return self._distributions
-
-
-class EntryPointFaker:
-    def __init__(self) -> None:
-        self._dist = _FakeDistribution()
-        self._finder = _FakeDistributionFinder([self._dist])
-        self._globals: dict[str, Any] = {}
-        self._enabled = False
-
-    def enable(self) -> None:
-        sys.meta_path.append(self._finder)
-        self._enabled = True
-        this_module = importlib.import_module(__name__)
-        for name, value in self._globals.items():
-            setattr(this_module, name, value)
-
-    def disable(self) -> None:
-        self._enabled = False
-        sys.meta_path.remove(self._finder)
-        this_module = importlib.import_module(__name__)
-        for name in self._globals:
-            delattr(this_module, name)
-
-    def __enter__(self) -> EntryPointFaker:
-        self.enable()
-        return self
-
-    def __exit__(self, _type: Any, _value: Any, _tb: Any) -> None:
-        self.disable()
-
-    def add(self, name: str, value: Any, group: Any) -> None:
-        if not isinstance(value, str):
-            qualname = value.__qualname__
-            # If the value isn't global, adopt it as a global of this module
-            if "." in qualname:
-                global_name = uuid.uuid4().hex
-                self._globals[global_name] = value
-                value = f"{__name__}:{global_name}"
-                if self._enabled:
-                    this_module = importlib.import_module(__name__)
-                    setattr(this_module, global_name, self._globals[global_name])
-            else:
-                value = f"{value.__module__}:{qualname}"
-        if not isinstance(group, str):
-            group = f"{group.__module__}.{group.__qualname__}"
-        self._dist.add_entry_point(group, name, value)
 
 
 class AppTest(unittest.IsolatedAsyncioTestCase):

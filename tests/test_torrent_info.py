@@ -17,16 +17,15 @@ import unittest
 
 import libtorrent as lt
 
+from tests import epfake
 from tvaf import lifecycle
 from tvaf import torrent_info
-
-from . import lib
 
 
 class TestWithPlugins(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        self.fake_eps = lib.EntryPointFaker()
+        self.fake_eps = epfake.EntryPointFaker()
         self.fake_eps.enable()
 
     async def asyncTearDown(self) -> None:
