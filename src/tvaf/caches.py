@@ -76,6 +76,6 @@ def add_clear_callback(callback: Callable[[], Any]) -> None:
     _callbacks.append(callback)
 
 
-def clear() -> None:
+def clear_all() -> None:
     for callback in _callbacks:
         callback()

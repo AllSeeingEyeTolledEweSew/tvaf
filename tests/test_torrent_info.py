@@ -31,7 +31,7 @@ class TestWithPlugins(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         await super().asyncTearDown()
         self.fake_eps.disable()
-        caches.clear()
+        caches.clear_all()
 
 
 INFO_HASHES = lt.info_hash_t(

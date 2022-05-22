@@ -244,4 +244,4 @@ async def _shutdown_drain_alerts() -> None:
 
 @shutdown_plugin("98_clear")
 async def _shutdown_clear_caches() -> None:
-    caches.clear()
+    caches.clear_all()

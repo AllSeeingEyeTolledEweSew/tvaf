@@ -51,14 +51,14 @@ TRACKER = "http://127.0.0.1:12345"
 class TestWithPlugins(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        caches.clear()
+        caches.clear_all()
         self.fake_eps = epfake.EntryPointFaker()
         self.fake_eps.enable()
 
     async def asyncTearDown(self) -> None:
         await super().asyncTearDown()
         self.fake_eps.disable()
-        caches.clear()
+        caches.clear_all()
 
 
 async def configure_all(atp: lt.add_torrent_params) -> None:

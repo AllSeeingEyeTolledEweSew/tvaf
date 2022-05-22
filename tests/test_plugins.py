@@ -38,7 +38,7 @@ class GetTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.fake_eps.disable()
-        caches.clear()
+        caches.clear_all()
 
     def test_get(self) -> None:
         plugin_map = plugins.get("test")
