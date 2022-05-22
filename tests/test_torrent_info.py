@@ -18,7 +18,7 @@ import unittest
 import libtorrent as lt
 
 from tests import epfake
-from tvaf import lifecycle
+from tvaf import caches
 from tvaf import torrent_info
 
 
@@ -31,7 +31,7 @@ class TestWithPlugins(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         await super().asyncTearDown()
         self.fake_eps.disable()
-        lifecycle.clear()
+        caches.clear_all()
 
 
 INFO_HASHES = lt.info_hash_t(

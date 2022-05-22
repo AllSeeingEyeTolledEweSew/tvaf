@@ -18,13 +18,14 @@ from typing import Optional
 
 import libtorrent as lt
 
+from tvaf import caches
+
 from .. import concurrency
-from .. import lifecycle
 from .. import ltpy
 from .. import services
 
 
-@lifecycle.alru_cache(maxsize=32)
+@caches.alru_cache(maxsize=32)
 async def get_torrent_info(handle: lt.torrent_handle) -> lt.torrent_info:
     async def get() -> Optional[lt.torrent_info]:
         with ltpy.translate_exceptions():

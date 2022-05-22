@@ -17,7 +17,7 @@ import unittest
 import unittest.mock
 
 from tests import epfake
-from tvaf import lifecycle
+from tvaf import caches
 from tvaf import plugins
 
 
@@ -38,7 +38,7 @@ class GetTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.fake_eps.disable()
-        lifecycle.clear()
+        caches.clear_all()
 
     def test_get(self) -> None:
         plugin_map = plugins.get("test")
