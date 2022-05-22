@@ -11,35 +11,23 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-from __future__ import annotations
+from typing import Iterator
 
-import unittest
-import unittest.mock
+import pytest
 
 from tests import epfake
-from tvaf import caches
-from tvaf import plugins
+from tvaf import caches as caches_lib
 
 
-def return_a() -> str:
-    return "a"
+@pytest.fixture
+def caches() -> Iterator:
+    yield
+    caches_lib.clear_all()
 
 
-def return_b() -> str:
-    return "b"
-
-
-class GetTest(unittest.TestCase):
-    def setUp(self) -> None:
-        self.fake_eps = epfake.EntryPointFaker()
-        self.fake_eps.enable()
-        self.fake_eps.add("a", return_a, "test")
-        self.fake_eps.add("b", return_b, "test")
-
-    def tearDown(self) -> None:
-        self.fake_eps.disable()
-        caches.clear_all()
-
-    def test_get(self) -> None:
-        plugin_map = plugins.get("test")
-        self.assertEqual(plugin_map, {"a": return_a, "b": return_b})
+@pytest.fixture
+def entry_point_faker() -> Iterator[epfake.EntryPointFaker]:
+    faker = epfake.EntryPointFaker()
+    faker.enable()
+    yield faker
+    faker.disable()

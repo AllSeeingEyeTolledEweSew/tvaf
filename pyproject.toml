@@ -13,3 +13,4 @@ known_third_party = ["libtorrent"]
 filterwarnings = "error"
 addopts = "-rw"
 asyncio_mode = "auto"
+usefixtures = "caches"
