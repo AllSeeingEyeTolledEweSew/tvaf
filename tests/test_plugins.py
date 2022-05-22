@@ -16,10 +16,9 @@ from __future__ import annotations
 import unittest
 import unittest.mock
 
+from tests import epfake
 from tvaf import lifecycle
 from tvaf import plugins
-
-from . import lib
 
 
 def return_a() -> str:
@@ -32,7 +31,7 @@ def return_b() -> str:
 
 class GetTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.fake_eps = lib.EntryPointFaker()
+        self.fake_eps = epfake.EntryPointFaker()
         self.fake_eps.enable()
         self.fake_eps.add("a", return_a, "test")
         self.fake_eps.add("b", return_b, "test")

@@ -17,10 +17,9 @@ import unittest
 
 import libtorrent as lt
 
+from tests import epfake
 from tvaf import lifecycle
 from tvaf import swarm
-
-from . import lib
 
 
 class TestPublicSwarm(unittest.IsolatedAsyncioTestCase):
@@ -53,7 +52,7 @@ class TestWithPlugins(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         lifecycle.clear()
-        self.fake_eps = lib.EntryPointFaker()
+        self.fake_eps = epfake.EntryPointFaker()
         self.fake_eps.enable()
 
     async def asyncTearDown(self) -> None:
