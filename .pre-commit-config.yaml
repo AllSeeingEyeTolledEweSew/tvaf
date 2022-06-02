@@ -42,6 +42,7 @@ repos:
         - fastapi>=0.78.0,<0.79
         - libtorrent>=2.0.4,<2.1
         - pydantic>=1.8,<2
+        - dbver>=0.5
         # keep this part in sync with tvaf/tests/test-requirements.txt
         - asgi-lifespan>=1.0.0,<2
         - httpx>=1.0.0.beta0,<2
@@ -59,6 +60,7 @@ repos:
       exclude: |
         (?x)^(
           tests/.*\.py|
+          src/tvaf/_internal/.*\.py|
           src/tvaf/driver.py|
           src/tvaf/__init__.py|
           src/tvaf/caches.py|

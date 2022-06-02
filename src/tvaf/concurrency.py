@@ -343,3 +343,18 @@ def as_completed_ctx(
     finally:
         for task in tasks:
             task.cancel()
+
+
+class _MissingType:
+    pass
+
+
+_MISSING = _MissingType()
+
+
+def create_future(result: Any = _MISSING) -> asyncio.Future:
+    """Returns an asyncio.Future with optional pre-set result."""
+    future = asyncio.get_event_loop().create_future()
+    if result is not _MISSING:
+        future.set_result(result)
+    return future

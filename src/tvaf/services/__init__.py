@@ -17,11 +17,13 @@ import asyncio
 import contextlib
 import logging
 import pathlib
+import sqlite3
 from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
 
+import dbver
 import libtorrent as lt
 
 from tvaf import caches
@@ -37,7 +39,7 @@ from .. import session as session_lib
 _LOG = logging.getLogger(__name__)
 
 CONFIG_PATH = pathlib.Path("config.json")
-RESUME_DATA_PATH = pathlib.Path("resume")
+RESUME_DB_PATH = pathlib.Path("resume.db")
 
 
 Startup = Callable[[], Awaitable]
@@ -104,12 +106,19 @@ async def get_alert_driver() -> driver_lib.AlertDriver:
     return driver_lib.AlertDriver(session_service=await get_session_service())
 
 
+def _resume_db_factory() -> dbver.Connection:
+    return sqlite3.Connection(RESUME_DB_PATH, isolation_level=None, timeout=300)
+
+
+resume_db_pool = dbver.null_pool(_resume_db_factory)
+
+
 @caches.asingleton()
 async def get_resume_service() -> resume_lib.ResumeService:
     return resume_lib.ResumeService(
         session=await get_session(),
         alert_driver=await get_alert_driver(),
-        path=RESUME_DATA_PATH,
+        pool=resume_db_pool,
     )
 
 
@@ -204,12 +213,7 @@ async def _startup_request_service() -> None:
 
 @startup_plugin("30_load")
 async def _load_resume_data() -> None:
-    # Load resume data
-    session = await get_session()
-    _LOG.info("startup: loading resume data")
-    async for atp in resume_lib.iter_resume_data_from_disk(RESUME_DATA_PATH):
-        # Does not block
-        session.async_add_torrent(atp)
+    await (await get_resume_service()).load()
 
 
 @shutdown_plugin("60_request")

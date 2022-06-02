@@ -14,125 +14,28 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import inspect
 import logging
 import math
-import os
-import pathlib
-import re
-from typing import Any
-from typing import AsyncIterator
-from typing import Callable
-from typing import Coroutine
+from typing import Awaitable
 from typing import Iterator
-from typing import MutableMapping
 from typing import Optional
-from typing import Union
 import warnings
-import weakref
 
+import dbver
 import libtorrent as lt
+
+from tvaf._internal import resumedb
+from tvaf._internal.resumedb import get_version
+from tvaf._internal.resumedb import iter_resume_data_from_db
+from tvaf._internal.resumedb import upgrade
 
 from . import concurrency
 from . import driver as driver_lib
 from . import ltpy
 
+__all__ = ["ResumeService", "get_version", "upgrade", "iter_resume_data_from_db"]
+
 _LOG = logging.getLogger(__name__)
-
-
-async def _try_read(path: pathlib.Path) -> Optional[bytes]:
-    try:
-        return await concurrency.to_thread(path.read_bytes)
-    except FileNotFoundError:
-        return None
-    except OSError:
-        _LOG.exception("while reading %s", path)
-        return None
-
-
-async def _try_load_ti(path: pathlib.Path) -> Optional[lt.torrent_info]:
-    data = await _try_read(path)
-    if data is None:
-        return None
-
-    try:
-        with ltpy.translate_exceptions():
-            return lt.torrent_info(data)
-    except ltpy.Error:
-        _LOG.exception("while parsing %s", path)
-        return None
-
-
-async def _try_load_atp(path: pathlib.Path) -> Optional[lt.add_torrent_params]:
-    data = await _try_read(path)
-    if data is None:
-        return None
-
-    try:
-        with ltpy.translate_exceptions():
-            return lt.read_resume_data(data)
-    except ltpy.Error:
-        _LOG.exception("while parsing %s", path)
-        return None
-
-
-async def iter_resume_data_from_disk(
-    dir_path: Union[str, os.PathLike],
-) -> AsyncIterator[lt.add_torrent_params]:
-    dir_path = pathlib.Path(dir_path)
-    if not await concurrency.to_thread(dir_path.is_dir):
-        return
-    async for path in concurrency.iter_in_thread(dir_path.iterdir(), batch_size=100):
-        if path.suffixes != [".resume"]:
-            continue
-        if not re.match(r"[0-9a-f]{40}", path.stem):
-            continue
-
-        atp = await _try_load_atp(path)
-        if not atp:
-            continue
-
-        if atp.ti is None:
-            atp.ti = await _try_load_ti(path.with_suffix(".torrent"))
-        yield atp
-
-
-@contextlib.contextmanager
-def _write_safe_log(path: pathlib.Path) -> Iterator[pathlib.Path]:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(".tmp")
-    try:
-        yield tmp_path
-        # Atomic on Linux and Windows, apparently
-        tmp_path.replace(path)
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            tmp_path.unlink()
-    _LOG.debug("fastresume: wrote %s", path)
-
-
-def _delete(path: pathlib.Path) -> None:
-    with contextlib.suppress(FileNotFoundError):
-        path.unlink()
-        _LOG.debug("fastresume: deleted %s", path)
-
-
-class _ChainedCoroutine:
-    def __init__(self, coro: Coroutine) -> None:
-        self.coro = coro
-        self.next: Optional[Coroutine] = None
-
-    async def run(self) -> None:
-        await self.coro
-        if self.next:
-            asyncio.create_task(self.next)
-
-    def schedule_after(self, other: Optional[_ChainedCoroutine]) -> None:
-        if other:
-            if inspect.getcoroutinestate(other.coro) != inspect.CORO_CLOSED:
-                other.next = self.run()
-                return
-        asyncio.create_task(self.run())
 
 
 class ResumeService:
@@ -146,86 +49,25 @@ class ResumeService:
         *,
         session: lt.session,
         alert_driver: driver_lib.AlertDriver,
-        path: Union[str, os.PathLike],
+        pool: dbver.Pool,
     ):
         self._session = session
-        self._path = pathlib.Path(path)
+        self._pool = pool
+        self._writer = resumedb.Writer(pool)
         self._alert_driver = alert_driver
         self._got_alert = asyncio.Event()
 
-        self._closed = asyncio.get_event_loop().create_future()
+        self._closed = concurrency.create_future()
         self._task: Optional[asyncio.Task] = None
 
-        # We want to serialize writes/deletes for a given info hash, so keep a
-        # weak pointer to an awaitable for the last-queued job. New jobs will
-        # await on the old ones before running.
-        self._info_hash_to_write_job: MutableMapping[
-            lt.sha1_hash, _ChainedCoroutine
-        ] = weakref.WeakValueDictionary()
-        self._writes = concurrency.RefCount()
+    async def load(self) -> None:
+        def iter_atps() -> Iterator[lt.add_torrent_params]:
+            with dbver.begin_pool(self._pool, dbver.LockMode.DEFERRED) as conn:
+                yield from iter_resume_data_from_db(conn)
 
-    def get_resume_data_path(self, info_hash: lt.sha1_hash) -> pathlib.Path:
-        return self._path.joinpath(str(info_hash)).with_suffix(".resume")
-
-    def get_torrent_path(self, info_hash: lt.sha1_hash) -> pathlib.Path:
-        return self._path.joinpath(str(info_hash)).with_suffix(".torrent")
-
-    def _schedule_write(
-        self,
-        info_hash: lt.sha1_hash,
-        func: Callable,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
-        async def write() -> None:
-            await concurrency.to_thread(func, *args, **kwargs)
-            self._writes.release()
-
-        self._writes.acquire()
-        chained = _ChainedCoroutine(write())
-        chained.schedule_after(self._info_hash_to_write_job.get(info_hash))
-        self._info_hash_to_write_job[info_hash] = chained
-
-    def _maybe_write(
-        self,
-        handle: lt.torrent_handle,
-        *,
-        info_section: bytes = None,
-        resume_data: dict[bytes, Any] = None,
-        ignore_if_exists=False,
-    ) -> None:
-        info_hash = handle.info_hash()
-        # See comment in _handle_alert.
-        if not ltpy.handle_in_session(handle, self._session):
-            return
-
-        if info_section is not None:
-            path = self.get_torrent_path(info_hash)
-            # torrent info never changes, so only write it once
-            if not path.is_file():
-                with _write_safe_log(path) as tmp_path:
-                    # We want to write a proper .torrent file. We can skip the
-                    # bdecode/bencode step if we just write bencoded data
-                    # directly
-                    with tmp_path.open(mode="wb") as fp:
-                        fp.write(b"d4:info")
-                        fp.write(info_section)
-                        fp.write(b"e")
-
-        if resume_data is not None:
-            path = self.get_resume_data_path(info_hash)
-            if not ignore_if_exists or not path.is_file():
-                # Don't include the info section in the resume data, as it
-                # accounts for most of the data but never changes
-                resume_data.pop(b"info", None)
-                with ltpy.translate_exceptions():
-                    bencoded = lt.bencode(resume_data)
-                with _write_safe_log(path) as tmp_path:
-                    tmp_path.write_bytes(bencoded)
-
-    def _delete(self, info_hash: lt.sha1_hash) -> None:
-        _delete(self.get_resume_data_path(info_hash))
-        _delete(self.get_torrent_path(info_hash))
+        async for atp in concurrency.iter_in_thread(iter_atps()):
+            # Does not block
+            self._session.async_add_torrent(atp)
 
     async def _handle_alerts(self) -> None:
         with self._alert_driver.iter_alerts(
@@ -253,8 +95,11 @@ class ResumeService:
         # Instead we call find_torrent() in the writer, as this is synchronized
         # with posting add_torrent_alert and torrent_removed_alert.
         # See https://github.com/arvidn/libtorrent/issues/5112
+
+        # NB: since 2.0.1, save_resume_data_alert is synchronized with
+        # add_torrent_alert/torrent_removed_alert
         if isinstance(alert, lt.save_resume_data_alert):
-            self._save_atp(alert.params, alert.handle)
+            self._add_job_save_atp(alert.params)
         elif isinstance(alert, lt.add_torrent_alert):
             if alert.error.value():
                 return
@@ -262,28 +107,28 @@ class ResumeService:
             # duplicate_is_error and the torrent exists, we will get an
             # add_torrent_alert with the params they passed, NOT the original
             # or current params.
-            self._save_atp(alert.params, alert.handle, ignore_if_exists=True)
+            self._add_job_save_atp(alert.params, overwrite=False)
+
+            if alert.params.ti is not None:
+                self._add_job_save_ti(concurrency.create_future(alert.params.ti))
         elif isinstance(alert, lt.torrent_removed_alert):
-            self._schedule_write(alert.info_hash, self._delete, alert.info_hash)
+            self._writer.add(
+                concurrency.create_future(resumedb.Delete(alert.info_hashes))
+            )
         elif isinstance(alert, lt.metadata_received_alert):
+            # metadata_received_alert is only emitted when we have the complete
+            # info section, including all piece layers for a v2 torrent
             handle = alert.handle
 
-            async def save_torrent_file() -> None:
+            async def get_ti() -> Optional[lt.torrent_info]:
                 try:
                     with ltpy.translate_exceptions():
                         # DOES block
-                        ti = await concurrency.to_thread(handle.torrent_file)
+                        return await concurrency.to_thread(handle.torrent_file)
                 except ltpy.InvalidTorrentHandleError:
-                    return
-                assert ti is not None
-                self._schedule_write(
-                    ti.info_hash(),
-                    self._maybe_write,
-                    handle,
-                    info_section=ti.info_section(),
-                )
+                    return None
 
-            asyncio.create_task(save_torrent_file())
+            self._add_job_save_ti(asyncio.create_task(get_ti()))
         elif isinstance(
             alert,
             (
@@ -294,47 +139,62 @@ class ResumeService:
                 lt.storage_moved_alert,
             ),
         ):
-            self._safe_save(alert.handle, flags=lt.save_resume_flags_t.only_if_modified)
-
-    def _safe_save(self, handle: lt.torrent_handle, flags: int = None) -> None:
-        with contextlib.suppress(ltpy.InvalidTorrentHandleError):
-            with ltpy.translate_exceptions():
-                if flags is None:
+            with contextlib.suppress(ltpy.InvalidTorrentHandleError):
+                with ltpy.translate_exceptions():
                     # Does not block
-                    handle.save_resume_data()
-                else:
-                    # Does not block
-                    handle.save_resume_data(flags=flags)
+                    alert.handle.save_resume_data(
+                        flags=lt.save_resume_flags_t.only_if_modified
+                    )
 
-    def _save_atp(
+    def _add_job_save_atp(
         self,
         atp: lt.add_torrent_params,
-        handle: lt.torrent_handle,
-        ignore_if_exists=False,
+        overwrite=True,
     ) -> None:
-        info_section: Optional[bytes] = None
-        if atp.ti is not None:
-            with ltpy.translate_exceptions():
-                info_section = atp.ti.info_section()
-
         # NB: The add_torrent_params object is managed with alert memory. We
         # must do write_resume_data() before the next pop_alerts()
 
-        # NB: We remove the info section (b"info") in the writer, as it's
-        # handled separately. It would be more efficient to set ti to None and
-        # use write_resume_data_buf(), but it turns out this mutation is
-        # visible to other alert handlers.
-        with ltpy.translate_exceptions():
-            bdecoded = lt.write_resume_data(atp)
+        # write_resume_data() will store the info dict if it's set. It makes up the
+        # majority of the data and is immutable, so we manage it separately.
 
-        self._schedule_write(
-            atp.info_hash,
-            self._maybe_write,
-            handle,
-            info_section=info_section,
-            resume_data=bdecoded,
-            ignore_if_exists=ignore_if_exists,
+        # Common case: we call save_resume_data without save_info_dict, so the info
+        # won't be set.
+        if atp.ti is None:
+            with ltpy.translate_exceptions():
+                resume_data = lt.write_resume_data_buf(atp)
+        # In other cases, including add_torrent_alert, info will be set
+        else:
+            # It would be more efficient to set ti to None and call
+            # write_resume_data_buf(), but it turns out the mutation is visible to
+            # other alert handlers
+            with ltpy.translate_exceptions():
+                bdecoded = lt.write_resume_data(atp)
+            bdecoded.pop(b"info", None)
+            with ltpy.translate_exceptions():
+                resume_data = lt.bencode(bdecoded)
+        self._writer.add(
+            concurrency.create_future(
+                resumedb.WriteResumeData(
+                    info_hashes=atp.info_hashes,
+                    resume_data=resume_data,
+                    overwrite=overwrite,
+                )
+            )
         )
+
+    def _add_job_save_ti(self, maybe_ti: Awaitable[Optional[lt.torrent_info]]) -> None:
+        async def make_save_info_job() -> Optional[resumedb.WriteInfo]:
+            ti = await maybe_ti
+            if ti is None:
+                return None
+            with ltpy.translate_exceptions():
+                # Does not block
+                info_hashes = ti.info_hashes()
+                # Does not block
+                info = ti.info_section()
+            return resumedb.WriteInfo(info_hashes=info_hashes, info=info)
+
+        self._writer.add(asyncio.create_task(make_save_info_job()))
 
     async def _periodic_save_all(self) -> None:
         while True:
@@ -385,7 +245,7 @@ class ResumeService:
 
         _LOG.debug("shutdown: waiting for resume data write jobs to complete")
         try:
-            await asyncio.wait_for(self._writes.wait_zero(), self.TIMEOUT)
+            await asyncio.wait_for(self._writer.close(), self.TIMEOUT)
         except asyncio.TimeoutError:
             warnings.warn(
                 "Timed out waiting for resume data write jobs. This is a bug. "

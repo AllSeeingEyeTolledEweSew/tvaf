@@ -14,13 +14,15 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+import sqlite3
 import tempfile
 from typing import Any
 from typing import cast
 from typing import Hashable
-from typing import TypeVar
+from typing import Iterator
 import unittest
 
+import dbver
 import libtorrent as lt
 
 from tvaf import concurrency
@@ -53,97 +55,6 @@ def atp_comparable(atp: lt.add_torrent_params) -> dict[bytes, Any]:
     return normalize(lt.write_resume_data(atp))
 
 
-_T = TypeVar("_T")
-
-
-class IterResumeDataTest(unittest.IsolatedAsyncioTestCase):
-
-    maxDiff = None
-
-    TORRENT1 = tdummy.Torrent.single_file(name=b"1.txt", length=1024)
-    TORRENT2 = tdummy.Torrent.single_file(name=b"2.txt", length=1024)
-    TORRENT3 = tdummy.Torrent.single_file(name=b"3.txt", length=1024)
-
-    def setUp(self) -> None:
-        self.tempdir = tempfile.TemporaryDirectory()
-        self.path = pathlib.Path(self.tempdir.name)
-
-        def write(torrent: tdummy.Torrent) -> None:
-            self.path.mkdir(parents=True, exist_ok=True)
-            path = self.path.joinpath(str(torrent.sha1_hash)).with_suffix(".resume")
-            atp = torrent.atp()
-            atp.ti = None
-            atp_data = lt.bencode(lt.write_resume_data(atp))
-            path.write_bytes(atp_data)
-            ti_data = lt.bencode(torrent.dict)
-            path.with_suffix(".torrent").write_bytes(ti_data)
-
-        write(self.TORRENT1)
-        write(self.TORRENT2)
-
-    def assert_atp_equal(
-        self, got: lt.add_torrent_params, expected: lt.add_torrent_params
-    ) -> None:
-        self.assertEqual(atp_comparable(got), atp_comparable(expected))
-
-    def assert_atp_list_equal(
-        self,
-        got: list[lt.add_torrent_params],
-        expected: list[lt.add_torrent_params],
-    ) -> None:
-        self.assertEqual(
-            [atp_comparable(atp) for atp in got],
-            [atp_comparable(atp) for atp in expected],
-        )
-
-    def assert_atp_sets_equal(
-        self,
-        got: set[lt.add_torrent_params],
-        expected: set[lt.add_torrent_params],
-    ) -> None:
-        self.assertEqual(
-            {atp_hashable(atp) for atp in got},
-            {atp_hashable(atp) for atp in expected},
-        )
-
-    def tearDown(self) -> None:
-        self.tempdir.cleanup()
-
-    async def test_normal(self) -> None:
-        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
-        self.assert_atp_sets_equal(
-            set(atps), {self.TORRENT1.atp(), self.TORRENT2.atp()}
-        )
-
-    async def test_ignore_bad_data(self) -> None:
-        # valid resume data, wrong filename
-        path = self.path.joinpath("00" * 20).with_suffix(".tmp")
-        data = lt.bencode(lt.write_resume_data(self.TORRENT3.atp()))
-        path.write_bytes(data)
-
-        # valid resume data, wrong filename
-        path = self.path.joinpath("whoopsie").with_suffix(".resume")
-        data = lt.bencode(lt.write_resume_data(self.TORRENT3.atp()))
-        path.write_bytes(data)
-
-        # good file name, non-bencoded data
-        path = self.path.joinpath("00" * 20).with_suffix(".resume")
-        path.write_text("whoopsie")
-
-        # good file name, bencoded data, but not a resume file
-        path = self.path.joinpath("01" * 20).with_suffix(".resume")
-        path.write_bytes(lt.bencode(self.TORRENT1.info))
-
-        # good file name, inaccessible
-        path = self.path.joinpath("02" * 20).with_suffix(".resume")
-        path.symlink_to("does_not_exist.resume")
-
-        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
-        self.assert_atp_sets_equal(
-            set(atps), {self.TORRENT1.atp(), self.TORRENT2.atp()}
-        )
-
-
 class TerminateTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.session_service = lib.create_isolated_session_service()
@@ -155,7 +66,7 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         self.resume = resume_lib.ResumeService(
             session=self.session,
             alert_driver=self.alert_driver,
-            path=self.path,
+            pool=dbver.null_pool(self.conn_factory),
         )
         self.resume.start()
         self.alert_driver.start()
@@ -166,6 +77,16 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         self.alert_driver.close()
         await asyncio.wait_for(self.alert_driver.wait_closed(), 5)
         await concurrency.to_thread(self.tempdir.cleanup)
+
+    def conn_factory(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.path / "resume.db", isolation_level=None)
+
+    async def get_resume_data(self) -> list[lt.add_torrent_params]:
+        def inner() -> Iterator[lt.add_torrent_params]:
+            with dbver.null_pool(self.conn_factory)() as conn:
+                yield from resume_lib.iter_resume_data_from_db(conn)
+
+        return await concurrency.alist(concurrency.iter_in_thread(inner()))
 
     async def test_mid_download(self) -> None:
         atp = self.torrent.atp()
@@ -194,7 +115,7 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
                 return False
             return all(bitmask[i] for i in range(num_blocks))
 
-        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
+        atps = await self.get_resume_data()
         self.assertEqual(len(atps), 1)
         atp = atps[0]
         self.assertTrue(atp_have_piece(atp, 0))
@@ -217,7 +138,7 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         self.resume.close()
         await asyncio.wait_for(self.resume.wait_closed(), 5)
 
-        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
+        atps = await self.get_resume_data()
         self.assertEqual(len(atps), 1)
         atp = atps[0]
         self.assertNotEqual(len(atp.have_pieces), 0)
@@ -243,7 +164,7 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         self.resume.close()
         await asyncio.wait_for(self.resume.wait_closed(), 5)
 
-        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
+        atps = await self.get_resume_data()
         self.assertEqual(atps, [])
 
     async def test_finish_remove_terminate(self) -> None:
@@ -266,7 +187,7 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         self.resume.close()
         await asyncio.wait_for(self.resume.wait_closed(), 5)
 
-        atps = await concurrency.alist(resume_lib.iter_resume_data_from_disk(self.path))
+        atps = await self.get_resume_data()
         self.assertEqual(atps, [])
 
 

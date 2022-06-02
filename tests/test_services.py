@@ -19,6 +19,7 @@ import os
 import pathlib
 import tempfile
 from typing import AsyncIterator
+from typing import Iterator
 import unittest
 
 import libtorrent as lt
@@ -99,9 +100,14 @@ class LifespanTest(TemporaryDirectoryTestCase):
             atp.save_path = self.tempdir.name
             session.async_add_torrent(atp)
 
+        def get_resume_data() -> Iterator[lt.add_torrent_params]:
+            with services.resume_db_pool() as conn:
+                yield from resume_lib.iter_resume_data_from_db(conn)
+
         resume_data = await concurrency.alist(
-            resume_lib.iter_resume_data_from_disk(services.RESUME_DATA_PATH)
+            concurrency.iter_in_thread(get_resume_data())
         )
+
         self.assertEqual(len(resume_data), 1)
 
         async with self.start_stop_session():
