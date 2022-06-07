@@ -159,29 +159,23 @@ class ResumeService:
         # majority of the data and is immutable, so we manage it separately.
 
         # Common case: we call save_resume_data without save_info_dict, so the info
-        # won't be set.
-        if atp.ti is None:
-            with ltpy.translate_exceptions():
-                resume_data = lt.write_resume_data_buf(atp)
-        # In other cases, including add_torrent_alert, info will be set
-        else:
-            # It would be more efficient to set ti to None and call
-            # write_resume_data_buf(), but it turns out the mutation is visible to
-            # other alert handlers
-            with ltpy.translate_exceptions():
-                bdecoded = lt.write_resume_data(atp)
-            bdecoded.pop(b"info", None)
-            with ltpy.translate_exceptions():
-                resume_data = lt.bencode(bdecoded)
+        # won't be set. In other cases, including add_torrent_alert, info will be set
+        info_hashes, resume_data, info = resumedb.split_resume_data(atp)
         self._writer.add(
             concurrency.create_future(
                 resumedb.WriteResumeData(
-                    info_hashes=atp.info_hashes,
+                    info_hashes=info_hashes,
                     resume_data=resume_data,
                     overwrite=overwrite,
                 )
             )
         )
+        if info is not None:
+            self._writer.add(
+                concurrency.create_future(
+                    resumedb.WriteInfo(info_hashes=info_hashes, info=info)
+                )
+            )
 
     def _add_job_save_ti(self, maybe_ti: Awaitable[Optional[lt.torrent_info]]) -> None:
         async def make_save_info_job() -> Optional[resumedb.WriteInfo]:

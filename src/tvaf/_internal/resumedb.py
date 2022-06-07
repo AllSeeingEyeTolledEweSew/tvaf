@@ -124,6 +124,32 @@ def _changes(conn: apsw.Connection) -> int:
     return changes
 
 
+def split_resume_data(
+    atp: lt.add_torrent_params,
+) -> tuple[lt.info_hash_t, bytes, Optional[bytes]]:
+    if atp.ti is None:
+        with ltpy.translate_exceptions():
+            resume_data = lt.write_resume_data_buf(atp)
+        info = None
+        info_hashes = atp.info_hashes
+    else:
+        # It's legal to create an add_torrent_params setting only ti and not
+        # info_hashes
+        info_hashes = atp.ti.info_hashes()
+        # It would be more efficient to set ti to None and call
+        # write_resume_data_buf(), but it turns out the mutation is visible to
+        # other alert handlers
+        with ltpy.translate_exceptions():
+            bdecoded = lt.write_resume_data(atp)
+        info = bdecoded.pop(b"info", None)
+        with ltpy.translate_exceptions():
+            resume_data = lt.bencode(bdecoded)
+        if info is not None:
+            with ltpy.translate_exceptions():
+                info = lt.bencode(info)
+    return info_hashes, resume_data, info
+
+
 @dataclasses.dataclass()
 class Job:
     info_hashes: lt.info_hash_t
