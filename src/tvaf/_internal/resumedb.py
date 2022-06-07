@@ -22,6 +22,7 @@ from typing import Iterable
 from typing import Iterator
 from typing import Optional
 
+import apsw
 import dbver
 import libtorrent as lt
 
@@ -31,13 +32,13 @@ from tvaf import ltpy
 _LOG = logging.getLogger(__name__)
 
 APPLICATION_ID = 690556334
-MIGRATIONS = dbver.SemverMigrations[dbver.Connection](application_id=APPLICATION_ID)
+MIGRATIONS = dbver.SemverMigrations[apsw.Connection](application_id=APPLICATION_ID)
 
 LATEST = 1_000_000
 
 
 @MIGRATIONS.migrates(0, 1_000_000)
-def _init_db(conn: dbver.Connection, schema: str) -> None:
+def _init_db(conn: apsw.Connection, schema: str) -> None:
     assert schema == "main"
     # NB: nulls are distinct in unique constraints. See https://sqlite.org/nulls.html
     conn.cursor().execute(
@@ -74,7 +75,7 @@ def _log_ih(info_hashes: lt.info_hash_t) -> str:
     return _log_ih_bytes(*_ih_bytes(info_hashes))
 
 
-def iter_resume_data_from_db(conn: dbver.Connection) -> Iterator[lt.add_torrent_params]:
+def iter_resume_data_from_db(conn: apsw.Connection) -> Iterator[lt.add_torrent_params]:
     version = get_version(conn)
     if version == 0:
         return
@@ -118,9 +119,8 @@ def iter_resume_data_from_db(conn: dbver.Connection) -> Iterator[lt.add_torrent_
             )
 
 
-def _changes(conn: dbver.Connection) -> int:
-    cur = conn.cursor()
-    (changes,) = cast(tuple[int], cur.execute("SELECT CHANGES()").fetchone())
+def _changes(conn: apsw.Connection) -> int:
+    (changes,) = cast(tuple[int], next(conn.cursor().execute("SELECT CHANGES()")))
     return changes
 
 
@@ -128,7 +128,7 @@ def _changes(conn: dbver.Connection) -> int:
 class Job:
     info_hashes: lt.info_hash_t
 
-    def __call__(self, conn: dbver.Connection) -> None:
+    def __call__(self, conn: apsw.Connection) -> None:
         raise NotImplementedError
 
 
@@ -137,33 +137,28 @@ class WriteResumeData(Job):
     resume_data: bytes
     overwrite: bool = True
 
-    def __call__(self, conn: dbver.Connection) -> None:
-        # Poor man's upsert. Change this when we can use apsw
-        params = (*_ih_bytes(self.info_hashes), self.resume_data)
+    def __call__(self, conn: apsw.Connection) -> None:
+        params = (*_ih_bytes(self.info_hashes), self.resume_data, self.overwrite)
         conn.cursor().execute(
-            "INSERT OR IGNORE INTO torrent (info_sha1, info_sha256, resume_data) "
-            "VALUES (?1, ?2, ?3)",
+            "INSERT INTO torrent (info_sha1, info_sha256, resume_data) "
+            "VALUES (?1, ?2, ?3) "
+            "ON CONFLICT DO UPDATE SET resume_data = ?3 WHERE ?4",
             params,
         )
-        changes = _changes(conn)
-        if self.overwrite and not changes:
-            conn.cursor().execute(
-                "UPDATE torrent SET resume_data = ?3 "
-                "WHERE info_sha1 IS ?1 AND info_sha256 IS ?2",
-                params,
+        if _LOG.isEnabledFor(logging.DEBUG):
+            changes = _changes(conn)
+            _LOG.debug(
+                "%s %s resume data",
+                _log_ih(self.info_hashes),
+                "wrote" if changes else "skipped writing",
             )
-        _LOG.debug(
-            "%s %s resume data",
-            _log_ih(self.info_hashes),
-            "wrote" if changes or self.overwrite else "skipped writing",
-        )
 
 
 @dataclasses.dataclass()
 class WriteInfo(Job):
     info: bytes
 
-    def __call__(self, conn: dbver.Connection) -> None:
+    def __call__(self, conn: apsw.Connection) -> None:
         info_hashes = _ih_bytes(self.info_hashes)
         # Update info-hashes, in case of a magnet link to a hybrid torrent which was
         # added with only one hash
@@ -214,7 +209,7 @@ class WriteInfo(Job):
 
 @dataclasses.dataclass()
 class Delete(Job):
-    def __call__(self, conn: dbver.Connection) -> None:
+    def __call__(self, conn: apsw.Connection) -> None:
         conn.cursor().execute(
             "DELETE FROM torrent WHERE (info_sha1 IS ?1) AND (info_sha256 IS ?2)",
             _ih_bytes(self.info_hashes),
@@ -230,7 +225,7 @@ class Delete(Job):
 
 
 class Writer:
-    def __init__(self, pool: dbver.Pool) -> None:
+    def __init__(self, pool: dbver.Pool[apsw.Connection]) -> None:
         self._pool = pool
         self._maybejobs: asyncio.Queue[Awaitable[Optional[Job]]] = asyncio.Queue()
         self._task: Optional[asyncio.Task] = None
@@ -249,7 +244,7 @@ class Writer:
             for job in jobs:
                 try:
                     job(conn)
-                except dbver.Errors:
+                except apsw.Error:
                     _LOG.exception(
                         "%s dropped resume data update %r",
                         _log_ih(job.info_hashes),
@@ -275,7 +270,7 @@ class Writer:
                 await asyncio.get_event_loop().run_in_executor(
                     self._executor, self._apply, jobs
                 )
-            except dbver.Errors:
+            except apsw.Error:
                 _LOG.exception("dropped %s resume data updates", len(jobs))
 
     async def _run(self) -> None:

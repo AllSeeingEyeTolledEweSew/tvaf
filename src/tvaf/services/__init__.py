@@ -17,12 +17,12 @@ import asyncio
 import contextlib
 import logging
 import pathlib
-import sqlite3
 from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
 
+import apsw
 import dbver
 import libtorrent as lt
 
@@ -106,8 +106,10 @@ async def get_alert_driver() -> driver_lib.AlertDriver:
     return driver_lib.AlertDriver(session_service=await get_session_service())
 
 
-def _resume_db_factory() -> dbver.Connection:
-    return sqlite3.Connection(RESUME_DB_PATH, isolation_level=None, timeout=300)
+def _resume_db_factory() -> apsw.Connection:
+    conn = apsw.Connection(str(RESUME_DB_PATH))
+    conn.setbusytimeout(120_000)
+    return conn
 
 
 resume_db_pool = dbver.null_pool(_resume_db_factory)

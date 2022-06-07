@@ -21,6 +21,7 @@ from typing import Iterator
 from typing import Optional
 import warnings
 
+import apsw
 import dbver
 import libtorrent as lt
 
@@ -49,7 +50,7 @@ class ResumeService:
         *,
         session: lt.session,
         alert_driver: driver_lib.AlertDriver,
-        pool: dbver.Pool,
+        pool: dbver.Pool[apsw.Connection],
     ):
         self._session = session
         self._pool = pool

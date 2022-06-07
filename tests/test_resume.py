@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
-import sqlite3
 import tempfile
 from typing import Any
 from typing import cast
@@ -22,6 +21,7 @@ from typing import Hashable
 from typing import Iterator
 import unittest
 
+import apsw
 import dbver
 import libtorrent as lt
 
@@ -78,8 +78,8 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.alert_driver.wait_closed(), 5)
         await concurrency.to_thread(self.tempdir.cleanup)
 
-    def conn_factory(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.path / "resume.db", isolation_level=None)
+    def conn_factory(self) -> apsw.Connection:
+        return apsw.Connection(str(self.path / "resume.db"))
 
     async def get_resume_data(self) -> list[lt.add_torrent_params]:
         def inner() -> Iterator[lt.add_torrent_params]:

@@ -12,10 +12,10 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 import random
-import sqlite3
 from typing import Any
 from typing import cast
 
+import apsw
 import dbver
 import libtorrent as lt
 import pytest
@@ -30,12 +30,12 @@ def normalize(atp: lt.add_torrent_params) -> dict[bytes, Any]:
 
 
 @pytest.fixture
-def empty_conn() -> dbver.Connection:
-    return sqlite3.connect(":memory:", isolation_level=None)
+def empty_conn() -> apsw.Connection:
+    return apsw.Connection(":memory:")
 
 
 @pytest.fixture
-def conn(empty_conn: dbver.Connection) -> dbver.Connection:
+def conn(empty_conn: apsw.Connection) -> apsw.Connection:
     resume.upgrade(empty_conn)
     return empty_conn
 
@@ -49,7 +49,7 @@ def ti() -> lt.torrent_info:
     return lt.torrent_info(ct.generate())
 
 
-def test_resume_data_external_info(conn: dbver.Connection, ti: lt.torrent_info) -> None:
+def test_resume_data_external_info(conn: apsw.Connection, ti: lt.torrent_info) -> None:
     orig = lt.add_torrent_params()
     orig.ti = ti
     bdecoded = lt.write_resume_data(orig)
@@ -69,7 +69,7 @@ def test_resume_data_external_info(conn: dbver.Connection, ti: lt.torrent_info) 
     assert normalize(atps[0]) == normalize(orig)
 
 
-def test_bad_resume_data(conn: dbver.Connection) -> None:
+def test_bad_resume_data(conn: apsw.Connection) -> None:
     conn.cursor().execute(
         "INSERT INTO torrent (info_sha1, info_sha256, resume_data, info) VALUES "
         "(RANDOMBLOB(20), RANDOMBLOB(32), X'00', NULL)"
@@ -81,7 +81,7 @@ def test_bad_resume_data(conn: dbver.Connection) -> None:
 
 
 def test_good_resume_data_bad_info_dict(
-    conn: dbver.Connection, ti: lt.torrent_info
+    conn: apsw.Connection, ti: lt.torrent_info
 ) -> None:
     atp = lt.add_torrent_params()
     atp.ti = ti
@@ -100,12 +100,12 @@ def test_good_resume_data_bad_info_dict(
     assert atps[0].ti is None
 
 
-def test_empty_database(conn: dbver.Connection) -> None:
+def test_empty_database(conn: apsw.Connection) -> None:
     atps = list(resume.iter_resume_data_from_db(conn))
     assert atps == []
 
 
-def test_invalid_database(empty_conn: dbver.Connection) -> None:
+def test_invalid_database(empty_conn: apsw.Connection) -> None:
     empty_conn.cursor().execute("PRAGMA application_id = 1")
     with pytest.raises(dbver.VersionError):
         list(resume.iter_resume_data_from_db(empty_conn))
