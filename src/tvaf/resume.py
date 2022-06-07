@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import logging
 import math
 from typing import Awaitable
@@ -91,7 +92,7 @@ class ResumeService:
         self._got_alert.set()
         # NB: torrent_removed_alert may be followed by other alerts for the
         # same handle, and the handle may still be valid. We must avoid writing
-        # data for deleted torrents, but we don't persist per-torrent state to
+        # data for deleted torrents, but we don't persist per-handle state to
         # check if torrent_removed_alert happened already for a handle.
         # Instead we call find_torrent() in the writer, as this is synchronized
         # with posting add_torrent_alert and torrent_removed_alert.
@@ -100,7 +101,7 @@ class ResumeService:
         # NB: since 2.0.1, save_resume_data_alert is synchronized with
         # add_torrent_alert/torrent_removed_alert
         if isinstance(alert, lt.save_resume_data_alert):
-            self._add_job_save_atp(alert.params)
+            self._update_resume_data(alert.params, only_if_new=False)
         elif isinstance(alert, lt.add_torrent_alert):
             if alert.error.value():
                 return
@@ -108,28 +109,11 @@ class ResumeService:
             # duplicate_is_error and the torrent exists, we will get an
             # add_torrent_alert with the params they passed, NOT the original
             # or current params.
-            self._add_job_save_atp(alert.params, overwrite=False)
-
-            if alert.params.ti is not None:
-                self._add_job_save_ti(concurrency.create_future(alert.params.ti))
+            self._update_resume_data(alert.params, only_if_new=True)
         elif isinstance(alert, lt.torrent_removed_alert):
-            self._writer.add(
-                concurrency.create_future(resumedb.Delete(alert.info_hashes))
-            )
+            self._writer.add(resumedb.delete, alert.info_hashes)
         elif isinstance(alert, lt.metadata_received_alert):
-            # metadata_received_alert is only emitted when we have the complete
-            # info section, including all piece layers for a v2 torrent
-            handle = alert.handle
-
-            async def get_ti() -> Optional[lt.torrent_info]:
-                try:
-                    with ltpy.translate_exceptions():
-                        # DOES block
-                        return await concurrency.to_thread(handle.torrent_file)
-                except ltpy.InvalidTorrentHandleError:
-                    return None
-
-            self._add_job_save_ti(asyncio.create_task(get_ti()))
+            self._metadata_received(alert.handle)
         elif isinstance(
             alert,
             (
@@ -147,49 +131,79 @@ class ResumeService:
                         flags=lt.save_resume_flags_t.only_if_modified
                     )
 
-    def _add_job_save_atp(
-        self,
-        atp: lt.add_torrent_params,
-        overwrite=True,
+    def _update_resume_data(
+        self, atp: lt.add_torrent_params, *, only_if_new: bool
     ) -> None:
-        # NB: The add_torrent_params object is managed with alert memory. We
-        # must do write_resume_data() before the next pop_alerts()
-
-        # write_resume_data() will store the info dict if it's set. It makes up the
-        # majority of the data and is immutable, so we manage it separately.
-
-        # Common case: we call save_resume_data without save_info_dict, so the info
-        # won't be set. In other cases, including add_torrent_alert, info will be set
-        info_hashes, resume_data, info = resumedb.split_resume_data(atp)
-        self._writer.add(
-            concurrency.create_future(
-                resumedb.WriteResumeData(
-                    info_hashes=info_hashes,
-                    resume_data=resume_data,
-                    overwrite=overwrite,
-                )
-            )
-        )
-        if info is not None:
+        # NB: add_torrent_params from alerts are managed with alert memory, so we must
+        # call write_resume_data() in the alert handler
+        split = resumedb.split_resume_data(atp)
+        if only_if_new:
             self._writer.add(
-                concurrency.create_future(
-                    resumedb.WriteInfo(info_hashes=info_hashes, info=info)
-                )
+                resumedb.insert_or_ignore_resume_data,
+                split.info_hashes,
+                split.resume_data,
             )
+        else:
+            self._writer.add(
+                resumedb.update_resume_data, split.info_hashes, split.resume_data
+            )
+        if split.info is not None:
+            self._writer.add(resumedb.update_info, split.info_hashes, split.info)
 
-    def _add_job_save_ti(self, maybe_ti: Awaitable[Optional[lt.torrent_info]]) -> None:
-        async def make_save_info_job() -> Optional[resumedb.WriteInfo]:
-            ti = await maybe_ti
+    def _metadata_received(self, handle: lt.torrent_handle) -> None:
+        async def get_ti() -> Optional[lt.torrent_info]:
+            # As of 2.0.6, metadata_received_alert may still be posted after
+            # torrent_removed_alert. This creates pathological cases like this:
+            # - add a hybrid torrent without metadata
+            # - remove it
+            # - add the same torrent, with only one info-hash (only v1 or only v2)
+            # - receive metadata_received_alert for the *first* handle
+            # - add the new info hash for our record
+            # Further alerts (including torrent_removed_alert) won't match the
+            # record, as we key records by the *combination* of hashes.
+            if not await concurrency.to_thread(
+                ltpy.handle_in_session, handle, self._session
+            ):
+                return None
+            try:
+                with ltpy.translate_exceptions():
+                    # DOES block
+                    ti = await concurrency.to_thread(handle.torrent_file)
+            except ltpy.InvalidTorrentHandleError:
+                return None
+            # metadata_received_alert is only emitted when we have the complete info
+            # section, including all piece layers for a v2 torrent, so torrent_file()
+            # should always be non-null
+            assert ti is not None
+            return ti
+
+        async def maybe_update_info_hashes(
+            ti_task: Awaitable[Optional[lt.torrent_info]],
+        ) -> Optional[resumedb.Job]:
+            ti = await ti_task
             if ti is None:
                 return None
             with ltpy.translate_exceptions():
                 # Does not block
-                info_hashes = ti.info_hashes()
-                # Does not block
-                info = ti.info_section()
-            return resumedb.WriteInfo(info_hashes=info_hashes, info=info)
+                return functools.partial(resumedb.update_info_hashes, ti.info_hashes())
 
-        self._writer.add(asyncio.create_task(make_save_info_job()))
+        async def maybe_update_info(
+            ti_task: Awaitable[Optional[lt.torrent_info]],
+        ) -> Optional[resumedb.Job]:
+            ti = await ti_task
+            if ti is None:
+                return None
+            with ltpy.translate_exceptions():
+                # Does not block
+                return functools.partial(
+                    resumedb.update_info, ti.info_hashes(), ti.info_section()
+                )
+
+        # We need either both tasks or neither, so have them both await a shared
+        # torrent_info result
+        ti_task = asyncio.create_task(get_ti())
+        self._writer.add_maybe(asyncio.create_task(maybe_update_info_hashes(ti_task)))
+        self._writer.add_maybe(asyncio.create_task(maybe_update_info(ti_task)))
 
     async def _periodic_save_all(self) -> None:
         while True:

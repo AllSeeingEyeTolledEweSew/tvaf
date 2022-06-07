@@ -13,10 +13,11 @@
 
 import asyncio
 import concurrent.futures
-import dataclasses
+import functools
 import logging
 from typing import Any
 from typing import Awaitable
+from typing import Callable
 from typing import cast
 from typing import Iterable
 from typing import Iterator
@@ -120,11 +121,6 @@ def iter_resume_data_from_db(conn: apsw.Connection) -> Iterator[lt.add_torrent_p
             )
 
 
-def _changes(conn: apsw.Connection) -> int:
-    (changes,) = cast(tuple[int], next(conn.cursor().execute("SELECT CHANGES()")))
-    return changes
-
-
 class ResumeData(NamedTuple):
     info_hashes: lt.info_hash_t
     resume_data: bytes
@@ -156,104 +152,65 @@ def split_resume_data(atp: lt.add_torrent_params) -> ResumeData:
         )
 
 
-@dataclasses.dataclass()
-class Job:
-    info_hashes: lt.info_hash_t
-
-    def __call__(self, conn: apsw.Connection) -> None:
-        raise NotImplementedError
-
-
-@dataclasses.dataclass()
-class WriteResumeData(Job):
-    resume_data: bytes
-    overwrite: bool = True
-
-    def __call__(self, conn: apsw.Connection) -> None:
-        params = (*_ih_bytes(self.info_hashes), self.resume_data, self.overwrite)
-        conn.cursor().execute(
-            "INSERT INTO torrent (info_sha1, info_sha256, resume_data) "
-            "VALUES (?1, ?2, ?3) "
-            "ON CONFLICT DO UPDATE SET resume_data = ?3 WHERE ?4",
-            params,
-        )
-        if _LOG.isEnabledFor(logging.DEBUG):
-            changes = _changes(conn)
-            _LOG.debug(
-                "%s %s resume data",
-                _log_ih(self.info_hashes),
-                "wrote" if changes else "skipped writing",
-            )
+def insert_or_ignore_resume_data(
+    info_hashes: lt.info_hash_t, resume_data: bytes, conn: apsw.Connection
+) -> None:
+    conn.cursor().execute(
+        "INSERT OR IGNORE INTO torrent (info_sha1, info_sha256, resume_data) "
+        "VALUES (?1, ?2, ?3)",
+        (*_ih_bytes(info_hashes), resume_data),
+    )
 
 
-@dataclasses.dataclass()
-class WriteInfo(Job):
-    info: bytes
-
-    def __call__(self, conn: apsw.Connection) -> None:
-        info_hashes = _ih_bytes(self.info_hashes)
-        # Update info-hashes, in case of a magnet link to a hybrid torrent which was
-        # added with only one hash
-        if None not in info_hashes:
-            # NB: this could violate SQL-level constraints in theory. We rely on the
-            # fact that libtorrent's internal indexes follow the same constraints. In
-            # particular if two magnet-link torrents are added, using the v1 and v2
-            # hashes of the same hybrid torrent, then when they receive metadata, BOTH
-            # will error out, and neither will emit metadata_received_alert
-            conn.cursor().execute(
-                "UPDATE torrent SET info_sha1 = ?1 WHERE (info_sha1 IS NULL) "
-                "AND (info_sha256 IS ?2)",
-                info_hashes,
-            )
-            if _LOG.isEnabledFor(logging.DEBUG):
-                changes = _changes(conn)
-                _LOG.debug(
-                    "%s %s sha1 hash",
-                    _log_ih(self.info_hashes),
-                    "updated" if changes else "skipped updating",
-                )
-            conn.cursor().execute(
-                "UPDATE torrent SET info_sha256 = ?2 WHERE (info_sha1 IS NULL) "
-                "AND (info_sha1 IS ?1)",
-                info_hashes,
-            )
-            if _LOG.isEnabledFor(logging.DEBUG):
-                changes = _changes(conn)
-                _LOG.debug(
-                    "%s %s sha256 hash",
-                    _log_ih(self.info_hashes),
-                    "updated" if changes else "skipped updating",
-                )
-        conn.cursor().execute(
-            "UPDATE torrent SET info = ?3 "
-            "WHERE (info_sha1 IS ?1) AND (info_sha256 IS ?2) "
-            "AND (info IS NULL)",
-            (*info_hashes, self.info),
-        )
-        if _LOG.isEnabledFor(logging.DEBUG):
-            changes = _changes(conn)
-            _LOG.debug(
-                "%s %s info section",
-                _log_ih(self.info_hashes),
-                "wrote" if changes else "skipped writing",
-            )
+def update_resume_data(
+    info_hashes: lt.info_hash_t, resume_data: bytes, conn: apsw.Connection
+) -> None:
+    # Change OR to AND when https://github.com/arvidn/libtorrent/issues/6913 is fixed
+    conn.cursor().execute(
+        "UPDATE torrent SET resume_data = ?3 "
+        "WHERE (info_sha1 IS ?1) OR (info_sha256 IS ?2)",
+        (*_ih_bytes(info_hashes), resume_data),
+    )
 
 
-@dataclasses.dataclass()
-class Delete(Job):
-    def __call__(self, conn: apsw.Connection) -> None:
-        conn.cursor().execute(
-            "DELETE FROM torrent WHERE (info_sha1 IS ?1) AND (info_sha256 IS ?2)",
-            _ih_bytes(self.info_hashes),
-        )
-        changes = _changes(conn)
-        if changes:
-            _LOG.debug("%s deleted resume data", _log_ih(self.info_hashes))
-        else:
-            _LOG.warning(
-                "%s wanted to delete resume data, but not found. this may be a bug!",
-                _log_ih(self.info_hashes),
-            )
+def update_info_hashes(info_hashes: lt.info_hash_t, conn: apsw.Connection) -> None:
+    params = _ih_bytes(info_hashes)
+    info_sha1, info_sha256 = params
+    if info_sha1 is None or info_sha256 is None:
+        return
+    conn.cursor().execute(
+        "UPDATE torrent SET info_sha1 = ?1 "
+        "WHERE (info_sha1 IS NULL) AND (info_sha256 IS ?2)",
+        params,
+    )
+    conn.cursor().execute(
+        "UPDATE torrent SET info_sha256 = ?2 "
+        "WHERE (info_sha256 IS NULL) AND (info_sha1 IS ?1)",
+        params,
+    )
+
+
+def update_info(
+    info_hashes: lt.info_hash_t, info: bytes, conn: apsw.Connection
+) -> None:
+    # Change OR to AND when https://github.com/arvidn/libtorrent/issues/6913 is fixed
+    conn.cursor().execute(
+        "UPDATE torrent SET info = ?3 "
+        "WHERE (info_sha1 IS ?1) OR (info_sha256 IS ?2) "
+        "AND (info IS NULL)",
+        (*_ih_bytes(info_hashes), info),
+    )
+
+
+def delete(info_hashes: lt.info_hash_t, conn: apsw.Connection) -> None:
+    # Change OR to AND when https://github.com/arvidn/libtorrent/issues/6913 is fixed
+    conn.cursor().execute(
+        "DELETE FROM torrent WHERE (info_sha1 IS ?1) OR (info_sha256 IS ?2)",
+        _ih_bytes(info_hashes),
+    )
+
+
+Job = Callable[[apsw.Connection], Any]
 
 
 class Writer:
@@ -264,11 +221,14 @@ class Writer:
         self._closed = False
         self._executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
-    def add(self, maybejob: Awaitable[Optional[Job]]) -> None:
+    def add_maybe(self, maybejob: Awaitable[Optional[Job]]) -> None:
         assert not self._closed
         self._maybejobs.put_nowait(maybejob)
         if self._task is None:
             self._task = asyncio.create_task(self._run())
+
+    def add(self, func: Callable[..., None], *args: Any) -> None:
+        self.add_maybe(concurrency.create_future(functools.partial(func, *args)))
 
     def _apply(self, jobs: Iterable[Job]) -> None:
         with dbver.begin_pool(self._pool, dbver.IMMEDIATE) as conn:
@@ -278,8 +238,7 @@ class Writer:
                     job(conn)
                 except apsw.Error:
                     _LOG.exception(
-                        "%s dropped resume data update %r",
-                        _log_ih(job.info_hashes),
+                        "dropped resume data update %r",
                         job,
                     )
 
