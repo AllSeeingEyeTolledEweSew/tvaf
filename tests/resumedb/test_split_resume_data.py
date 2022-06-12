@@ -11,42 +11,44 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
-import random
 
 import libtorrent as lt
 import pytest
 
+from tests import conftest
 from tvaf._internal import resumedb
 
 
+@pytest.fixture(
+    params=(conftest.V1, conftest.V2, conftest.HYBRID), ids=lambda v: f"{v.name}"
+)
+def proto(request: pytest.FixtureRequest) -> conftest.Proto:
+    return request.param  # type: ignore
+
+
 @pytest.fixture
-def ti() -> lt.torrent_info:
-    fs = lt.file_storage()
-    fs.add_file("file.txt", 1024)
-    ct = lt.create_torrent(fs)
-    ct.set_hash(0, random.randbytes(20))
-    return lt.torrent_info(ct.generate())
+def atp(mkatp: conftest.MkAtp, proto: conftest.Proto) -> lt.add_torrent_params:
+    return mkatp(proto=proto)
 
 
-def test_no_ti(ti: lt.torrent_info) -> None:
-    atp = lt.add_torrent_params()
-    atp.info_hashes = ti.info_hashes()
+def test_magnet(atp: lt.add_torrent_params) -> None:
+    assert atp.ti is not None
+    atp = lt.parse_magnet_uri(lt.make_magnet_uri(atp.ti))
     atp.save_path = "test-path"
 
-    info_hashes, resume_data, info = resumedb.split_resume_data(atp)
+    split = resumedb.split_resume_data(atp)
 
-    assert info_hashes == ti.info_hashes()
-    assert lt.read_resume_data(resume_data).save_path == "test-path"
-    assert info is None
+    assert split.info_hashes == atp.info_hashes
+    assert lt.read_resume_data(split.resume_data).save_path == "test-path"
+    assert split.info is None
 
 
-def test_with_ti(ti: lt.torrent_info) -> None:
-    atp = lt.add_torrent_params()
-    atp.ti = ti
+def test_full(atp: lt.add_torrent_params) -> None:
+    assert atp.ti is not None
     atp.save_path = "test-path"
 
-    info_hashes, resume_data, info = resumedb.split_resume_data(atp)
+    split = resumedb.split_resume_data(atp)
 
-    assert info_hashes == ti.info_hashes()
-    assert info == ti.info_section()
-    assert lt.read_resume_data(resume_data).save_path == "test-path"
+    assert split.info_hashes == atp.ti.info_hashes()
+    assert split.info == atp.ti.info_section()
+    assert lt.read_resume_data(split.resume_data).save_path == "test-path"

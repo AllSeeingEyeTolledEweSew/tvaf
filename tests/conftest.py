@@ -11,8 +11,13 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+import enum
+import functools
+import random
 from typing import Iterator
+from typing import Protocol
 
+import libtorrent as lt
 import pytest
 
 from tests import epfake
@@ -31,3 +36,46 @@ def entry_point_faker() -> Iterator[epfake.EntryPointFaker]:
     faker.enable()
     yield faker
     faker.disable()
+
+
+class Proto(enum.IntFlag):
+    V1 = 1
+    V2 = 2
+    HYBRID = 3
+
+
+V1 = Proto.V1
+V2 = Proto.V2
+HYBRID = Proto.HYBRID
+
+
+class MkAtp(Protocol):
+    def __call__(self, *, proto: Proto = ...) -> lt.add_torrent_params:
+        ...
+
+
+def _mkatp(
+    tmp_path_factory: pytest.TempPathFactory, *, proto=Proto.HYBRID
+) -> lt.add_torrent_params:
+    atp = lt.add_torrent_params()
+    # As of 2.0.6, create_torrent.set_hash2 isn't bound in python
+    tmp_path = tmp_path_factory.mktemp("test-atp")
+    (tmp_path / "file.txt").write_bytes(random.randbytes(1024))
+    fs = lt.file_storage()
+    lt.add_files(fs, str(tmp_path))
+    flags = 0
+    if not (proto & V2):
+        flags = lt.create_torrent.v1_only
+    elif not (proto & V1):
+        flags = lt.create_torrent.v2_only
+    ct = lt.create_torrent(fs, flags=flags)
+    lt.set_piece_hashes(ct, str(tmp_path.parent))
+    atp.ti = lt.torrent_info(ct.generate())
+    return atp
+
+
+@pytest.fixture
+def mkatp(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> MkAtp:
+    return functools.partial(_mkatp, tmp_path_factory)

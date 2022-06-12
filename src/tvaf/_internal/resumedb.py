@@ -20,6 +20,7 @@ from typing import Awaitable
 from typing import cast
 from typing import Iterable
 from typing import Iterator
+from typing import NamedTuple
 from typing import Optional
 
 import apsw
@@ -124,18 +125,21 @@ def _changes(conn: apsw.Connection) -> int:
     return changes
 
 
-def split_resume_data(
-    atp: lt.add_torrent_params,
-) -> tuple[lt.info_hash_t, bytes, Optional[bytes]]:
+class ResumeData(NamedTuple):
+    info_hashes: lt.info_hash_t
+    resume_data: bytes
+    info: Optional[bytes] = None
+
+
+def split_resume_data(atp: lt.add_torrent_params) -> ResumeData:
     if atp.ti is None:
         with ltpy.translate_exceptions():
-            resume_data = lt.write_resume_data_buf(atp)
-        info = None
-        info_hashes = atp.info_hashes
+            return ResumeData(
+                info_hashes=atp.info_hashes, resume_data=lt.write_resume_data_buf(atp)
+            )
     else:
         # It's legal to create an add_torrent_params setting only ti and not
         # info_hashes
-        info_hashes = atp.ti.info_hashes()
         # It would be more efficient to set ti to None and call
         # write_resume_data_buf(), but it turns out the mutation is visible to
         # other alert handlers
@@ -147,7 +151,9 @@ def split_resume_data(
         if info is not None:
             with ltpy.translate_exceptions():
                 info = lt.bencode(info)
-    return info_hashes, resume_data, info
+        return ResumeData(
+            info_hashes=atp.ti.info_hashes(), resume_data=resume_data, info=info
+        )
 
 
 @dataclasses.dataclass()
