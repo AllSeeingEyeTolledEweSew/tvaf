@@ -40,6 +40,7 @@ def test_magnet(atp: lt.add_torrent_params) -> None:
 
     assert split.info_hashes == atp.info_hashes
     assert lt.read_resume_data(split.resume_data).save_path == "test-path"
+    assert lt.read_resume_data(split.resume_data).info_hashes == split.info_hashes
     assert split.info is None
 
 
@@ -52,3 +53,4 @@ def test_full(atp: lt.add_torrent_params) -> None:
     assert split.info_hashes == atp.ti.info_hashes()
     assert split.info == atp.ti.info_section()
     assert lt.read_resume_data(split.resume_data).save_path == "test-path"
+    assert lt.read_resume_data(split.resume_data).info_hashes == split.info_hashes

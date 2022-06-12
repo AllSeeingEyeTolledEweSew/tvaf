@@ -142,14 +142,18 @@ def split_resume_data(atp: lt.add_torrent_params) -> ResumeData:
         with ltpy.translate_exceptions():
             bdecoded = lt.write_resume_data(atp)
         info = bdecoded.pop(b"info", None)
+        # Normalize resume_data, such that using it without the info looks the same as
+        # using a magnet link. Ensure file-format major is a compatible version though
+        info_hashes = atp.ti.info_hashes()
+        assert bdecoded[b"file-version"] == 1
+        bdecoded[b"info-hash"] = info_hashes.v1.to_bytes()
+        bdecoded[b"info-hash2"] = info_hashes.v2.to_bytes()
         with ltpy.translate_exceptions():
             resume_data = lt.bencode(bdecoded)
         if info is not None:
             with ltpy.translate_exceptions():
                 info = lt.bencode(info)
-        return ResumeData(
-            info_hashes=atp.ti.info_hashes(), resume_data=resume_data, info=info
-        )
+        return ResumeData(info_hashes=info_hashes, resume_data=resume_data, info=info)
 
 
 def insert_or_ignore_resume_data(
