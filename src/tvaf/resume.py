@@ -17,7 +17,9 @@ import contextlib
 import functools
 import logging
 import math
+from typing import Any
 from typing import Awaitable
+from typing import Callable
 from typing import Iterator
 from typing import Optional
 import warnings
@@ -55,7 +57,7 @@ class ResumeService:
     ):
         self._session = session
         self._pool = pool
-        self._writer = resumedb.Writer(pool)
+        self._queue: resumedb.Queue = asyncio.Queue()
         self._alert_driver = alert_driver
         self._got_alert = asyncio.Event()
 
@@ -101,9 +103,9 @@ class ResumeService:
         # NB: since 2.0.1, save_resume_data_alert is synchronized with
         # add_torrent_alert/torrent_removed_alert
         if isinstance(alert, lt.save_resume_data_alert):
-            self._writer.add(resumedb.update_resume_data, resumedb.copy(alert.params))
+            self._add(resumedb.update_resume_data, resumedb.copy(alert.params))
             if alert.params.ti is not None:
-                self._writer.add(resumedb.update_info, alert.params.ti)
+                self._add(resumedb.update_info, alert.params.ti)
         elif isinstance(alert, lt.add_torrent_alert):
             if alert.error.value():
                 return
@@ -111,13 +113,13 @@ class ResumeService:
             # duplicate_is_error and the torrent exists, we will get an
             # add_torrent_alert with the params they passed, NOT the original
             # or current params.
-            self._writer.add(
+            self._add(
                 resumedb.insert_or_ignore_resume_data, resumedb.copy(alert.params)
             )
             if alert.params.ti is not None:
-                self._writer.add(resumedb.update_info, alert.params.ti)
+                self._add(resumedb.update_info, alert.params.ti)
         elif isinstance(alert, lt.torrent_removed_alert):
-            self._writer.add(resumedb.delete, alert.info_hashes)
+            self._add(resumedb.delete, alert.info_hashes)
         elif isinstance(alert, lt.metadata_received_alert):
             self._metadata_received(alert.handle)
         elif isinstance(
@@ -166,20 +168,20 @@ class ResumeService:
 
         async def maybe_update_info_hashes(
             ti_task: Awaitable[Optional[lt.torrent_info]],
-        ) -> Optional[resumedb.Job]:
+        ) -> resumedb.Job:
             ti = await ti_task
             if ti is None:
-                return None
+                return lambda conn: None
             with ltpy.translate_exceptions():
                 # Does not block
                 return functools.partial(resumedb.update_info_hashes, ti.info_hashes())
 
         async def maybe_update_info(
             ti_task: Awaitable[Optional[lt.torrent_info]],
-        ) -> Optional[resumedb.Job]:
+        ) -> resumedb.Job:
             ti = await ti_task
             if ti is None:
-                return None
+                return lambda conn: None
             with ltpy.translate_exceptions():
                 # Does not block
                 return functools.partial(resumedb.update_info, ti)
@@ -187,8 +189,12 @@ class ResumeService:
         # We need either both tasks or neither, so have them both await a shared
         # torrent_info result
         ti_task = asyncio.create_task(get_ti())
-        self._writer.add_maybe(asyncio.create_task(maybe_update_info_hashes(ti_task)))
-        self._writer.add_maybe(asyncio.create_task(maybe_update_info(ti_task)))
+        self._queue.put_nowait(asyncio.create_task(maybe_update_info_hashes(ti_task)))
+        self._queue.put_nowait(asyncio.create_task(maybe_update_info(ti_task)))
+
+    def _add(self, func: Callable[..., None], *args: Any) -> None:
+        job = functools.partial(func, *args)
+        self._queue.put_nowait(concurrency.create_future(job))
 
     async def _periodic_save_all(self) -> None:
         while True:
@@ -198,6 +204,7 @@ class ResumeService:
     async def _run(self) -> None:
         periodic = asyncio.create_task(self._periodic_save_all())
         alert_handler = asyncio.create_task(self._handle_alerts())
+        writer = asyncio.create_task(resumedb.write(self._pool, self._queue))
 
         _LOG.info("ResumeService started")
         await self._closed
@@ -238,8 +245,9 @@ class ResumeService:
         alert_handler.cancel()
 
         _LOG.debug("shutdown: waiting for resume data write jobs to complete")
+        self._queue.put_nowait(None)
         try:
-            await asyncio.wait_for(self._writer.close(), self.TIMEOUT)
+            await asyncio.wait_for(writer, self.TIMEOUT)
         except asyncio.TimeoutError:
             warnings.warn(
                 "Timed out waiting for resume data write jobs. This is a bug. "

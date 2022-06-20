@@ -25,6 +25,7 @@ import pathlib
 import tempfile
 import time
 from typing import Any
+from typing import AsyncIterator
 from typing import Iterator
 import unittest
 import unittest.mock
@@ -65,6 +66,15 @@ def create_isolated_session_service(
 def loop_until_timeout(timeout: float, msg: str = "condition") -> Iterator[None]:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        yield
+    raise AssertionError(f"{msg} timed out")
+
+
+async def aloop_until_timeout(
+    timeout: float, msg: str = "condition"
+) -> AsyncIterator[None]:
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
         yield
     raise AssertionError(f"{msg} timed out")
 

@@ -12,8 +12,6 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 import asyncio
-import concurrent.futures
-import functools
 import logging
 from typing import Any
 from typing import Awaitable
@@ -22,12 +20,12 @@ from typing import cast
 from typing import Iterable
 from typing import Iterator
 from typing import Optional
+from typing import TypedDict
 
 import apsw
 import dbver
 import libtorrent as lt
 
-from tvaf import concurrency
 from tvaf import ltpy
 
 _LOG = logging.getLogger(__name__)
@@ -136,10 +134,11 @@ def resume_data(atp: lt.add_torrent_params) -> bytes:
     if atp.ti is None:
         with ltpy.translate_exceptions():
             return lt.write_resume_data_buf(atp)
-    atp = copy(atp)
-    atp.ti = None
+    atp_copy = copy(atp)
+    atp_copy.info_hashes = atp.ti.info_hashes()
+    atp_copy.ti = None
     with ltpy.translate_exceptions():
-        return lt.write_resume_data_buf(atp)
+        return lt.write_resume_data_buf(atp_copy)
 
 
 def insert_or_ignore_resume_data(
@@ -197,76 +196,48 @@ def delete(ih: lt.info_hash_t, conn: apsw.Connection) -> None:
 
 
 Job = Callable[[apsw.Connection], Any]
+Item = Optional[Awaitable[Job]]
+Queue = asyncio.Queue[Item]
 
 
-class Writer:
-    def __init__(self, pool: dbver.Pool[apsw.Connection]) -> None:
-        self._pool = pool
-        self._maybejobs: asyncio.Queue[Awaitable[Optional[Job]]] = asyncio.Queue()
-        self._task: Optional[asyncio.Task] = None
-        self._closed = False
-        self._executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+def _apply(pool: dbver.Pool[apsw.Connection], jobs: Iterable[Job]) -> None:
+    with dbver.begin_pool(pool, dbver.IMMEDIATE) as conn:
+        conn.setbusyhandler(None)
+        dbver.semver_check_breaking(LATEST, upgrade(conn))
+        for job in jobs:
+            job(conn)
 
-    def add_maybe(self, maybejob: Awaitable[Optional[Job]]) -> None:
-        assert not self._closed
-        self._maybejobs.put_nowait(maybejob)
-        if self._task is None:
-            self._task = asyncio.create_task(self._run())
 
-    def add(self, func: Callable[..., None], *args: Any) -> None:
-        self.add_maybe(concurrency.create_future(functools.partial(func, *args)))
+class WriteCoverage(TypedDict, total=False):
+    busy: bool
 
-    def _apply(self, jobs: Iterable[Job]) -> None:
-        with dbver.begin_pool(self._pool, dbver.IMMEDIATE) as conn:
-            dbver.semver_check_breaking(LATEST, upgrade(conn))
-            for job in jobs:
-                try:
-                    job(conn)
-                except apsw.Error:
-                    _LOG.exception(
-                        "dropped resume data update %r",
-                        job,
-                    )
 
-    async def _step(self) -> None:
+async def write(
+    pool: dbver.Pool[apsw.Connection], queue: Queue, *, cov: WriteCoverage = None
+) -> None:
+    done = False
+    while not done:
+        # TODO: use a hold-down timer for committing
+        item = await queue.get()
         jobs: list[Job] = []
-        job = await (await self._maybejobs.get())
-        if job is not None:
-            jobs.append(job)
-        # Batch all available jobs into the next transaction
-        while self._maybejobs.qsize() > 0:
-            job = await (self._maybejobs.get_nowait())
-            if job is not None:
-                jobs.append(job)
-        if jobs:
-            if self._executor is None:
-                self._executor = concurrent.futures.ThreadPoolExecutor(
-                    max_workers=1, thread_name_prefix="resumedb-writer"
-                )
+        if item is None:
+            done = True
+        else:
+            jobs.append(await item)
+        while jobs:
+            # Batch all available jobs into the next transaction
+            while not (done or queue.empty()):
+                item = queue.get_nowait()
+                if item is None:
+                    done = True
+                else:
+                    jobs.append(await item)
             try:
-                await asyncio.get_event_loop().run_in_executor(
-                    self._executor, self._apply, jobs
-                )
-            except apsw.Error:
-                _LOG.exception("dropped %s resume data updates", len(jobs))
-
-    async def _run(self) -> None:
-        try:
-            while not self._closed:
-                await self._step()
-        except Exception:
-            _LOG.exception("fatal error in resume data writer")
-            raise
-        finally:
-            if self._executor is not None:
-                await asyncio.to_thread(self._executor.shutdown)
-                self._executor = None
-
-    async def close(self) -> None:
-        assert not self._closed
-        self._closed = True
-        if self._task is not None:
-            wakeup = concurrency.create_future(None)
-            self._maybejobs.put_nowait(wakeup)
-            await self._task
-            self._task = None
+                await asyncio.to_thread(_apply, pool, jobs)
+            except apsw.BusyError:
+                _LOG.info("resumedb busy, will retry after 200ms")
+                await asyncio.sleep(0.2)
+                if cov is not None:
+                    cov["busy"] = True
+            else:
+                jobs = []
