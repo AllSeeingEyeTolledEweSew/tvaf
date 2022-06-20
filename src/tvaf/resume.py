@@ -101,7 +101,9 @@ class ResumeService:
         # NB: since 2.0.1, save_resume_data_alert is synchronized with
         # add_torrent_alert/torrent_removed_alert
         if isinstance(alert, lt.save_resume_data_alert):
-            self._update_resume_data(alert.params, only_if_new=False)
+            self._writer.add(resumedb.update_resume_data, resumedb.copy(alert.params))
+            if alert.params.ti is not None:
+                self._writer.add(resumedb.update_info, alert.params.ti)
         elif isinstance(alert, lt.add_torrent_alert):
             if alert.error.value():
                 return
@@ -109,7 +111,11 @@ class ResumeService:
             # duplicate_is_error and the torrent exists, we will get an
             # add_torrent_alert with the params they passed, NOT the original
             # or current params.
-            self._update_resume_data(alert.params, only_if_new=True)
+            self._writer.add(
+                resumedb.insert_or_ignore_resume_data, resumedb.copy(alert.params)
+            )
+            if alert.params.ti is not None:
+                self._writer.add(resumedb.update_info, alert.params.ti)
         elif isinstance(alert, lt.torrent_removed_alert):
             self._writer.add(resumedb.delete, alert.info_hashes)
         elif isinstance(alert, lt.metadata_received_alert):
@@ -130,25 +136,6 @@ class ResumeService:
                     alert.handle.save_resume_data(
                         flags=lt.save_resume_flags_t.only_if_modified
                     )
-
-    def _update_resume_data(
-        self, atp: lt.add_torrent_params, *, only_if_new: bool
-    ) -> None:
-        # NB: add_torrent_params from alerts are managed with alert memory, so we must
-        # call write_resume_data() in the alert handler
-        split = resumedb.split_resume_data(atp)
-        if only_if_new:
-            self._writer.add(
-                resumedb.insert_or_ignore_resume_data,
-                split.info_hashes,
-                split.resume_data,
-            )
-        else:
-            self._writer.add(
-                resumedb.update_resume_data, split.info_hashes, split.resume_data
-            )
-        if split.info is not None:
-            self._writer.add(resumedb.update_info, split.info_hashes, split.info)
 
     def _metadata_received(self, handle: lt.torrent_handle) -> None:
         async def get_ti() -> Optional[lt.torrent_info]:
@@ -195,9 +182,7 @@ class ResumeService:
                 return None
             with ltpy.translate_exceptions():
                 # Does not block
-                return functools.partial(
-                    resumedb.update_info, ti.info_hashes(), ti.info_section()
-                )
+                return functools.partial(resumedb.update_info, ti)
 
         # We need either both tasks or neither, so have them both await a shared
         # torrent_info result

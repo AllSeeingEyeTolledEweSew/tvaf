@@ -51,10 +51,9 @@ def atp(
 
 
 def test_delete(atp: lt.add_torrent_params, conn: apsw.Connection) -> None:
-    split = resumedb.split_resume_data(atp)
-    resumedb.insert_or_ignore_resume_data(split.info_hashes, split.resume_data, conn)
+    resumedb.insert_or_ignore_resume_data(atp, conn)
 
-    resumedb.delete(split.info_hashes, conn)
+    resumedb.delete(resumedb.info_hashes(atp), conn)
 
     atps = list(resumedb.iter_resume_data_from_db(conn))
     assert atps == []

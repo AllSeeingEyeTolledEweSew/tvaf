@@ -12,6 +12,8 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 
+from typing import Optional
+
 import apsw
 import libtorrent as lt
 import pytest
@@ -50,21 +52,26 @@ def atp(
     return atp
 
 
+def assert_ti_equal(a: Optional[lt.torrent_info], b: Optional[lt.torrent_info]) -> None:
+    if a is None:
+        assert b is None
+    else:
+        assert b is not None
+        assert a.info_section() == b.info_section()
+
+
 def test_update(atp: lt.add_torrent_params, conn: apsw.Connection) -> None:
     atp.save_path = "original"
-    split = resumedb.split_resume_data(atp)
-    resumedb.insert_or_ignore_resume_data(split.info_hashes, split.resume_data, conn)
-    if split.info is not None:
-        resumedb.update_info(split.info_hashes, split.info, conn)
+    resumedb.insert_or_ignore_resume_data(atp, conn)
+    if atp.ti is not None:
+        resumedb.update_info(atp.ti, conn)
 
     atp.save_path = "updated"
-    split = resumedb.split_resume_data(atp)
-    resumedb.update_resume_data(split.info_hashes, split.resume_data, conn)
+    resumedb.update_resume_data(atp, conn)
 
     atps = list(resumedb.iter_resume_data_from_db(conn))
     assert len(atps) == 1
     (got,) = atps
     assert got.save_path == "updated"
-    got_split = resumedb.split_resume_data(got)
-    assert got_split.info_hashes == split.info_hashes
-    assert got_split.info == split.info
+    assert resumedb.info_hashes(got) == resumedb.info_hashes(atp)
+    assert_ti_equal(got.ti, atp.ti)

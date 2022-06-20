@@ -67,40 +67,35 @@ def magnet_atp(
 def conn(magnet_atp: lt.add_torrent_params) -> apsw.Connection:
     result = apsw.Connection(":memory:")
     resumedb.upgrade(result)
-    split = resumedb.split_resume_data(magnet_atp)
-    assert split.info is None
-    resumedb.insert_or_ignore_resume_data(split.info_hashes, split.resume_data, result)
+    resumedb.insert_or_ignore_resume_data(magnet_atp, result)
     return result
 
 
 def test_update_info(ti: lt.torrent_info, conn: apsw.Connection) -> None:
     resumedb.update_info_hashes(ti.info_hashes(), conn)
-    resumedb.update_info(ti.info_hashes(), ti.info_section(), conn)
+    resumedb.update_info(ti, conn)
 
     atps = list(resumedb.iter_resume_data_from_db(conn))
     assert len(atps) == 1
     (got,) = atps
     assert got.ti is not None
-    got_split = resumedb.split_resume_data(got)
-    assert got_split.info_hashes == ti.info_hashes()
+    assert resumedb.info_hashes(got) == ti.info_hashes()
 
 
 def test_update_resume_data(
     ti: lt.torrent_info, atp: lt.add_torrent_params, conn: apsw.Connection
 ) -> None:
     resumedb.update_info_hashes(ti.info_hashes(), conn)
-    resumedb.update_info(ti.info_hashes(), ti.info_section(), conn)
+    resumedb.update_info(ti, conn)
 
     atp.save_path = "expected"
-    split = resumedb.split_resume_data(atp)
-    resumedb.update_resume_data(split.info_hashes, split.resume_data, conn)
+    resumedb.update_resume_data(atp, conn)
 
     atps = list(resumedb.iter_resume_data_from_db(conn))
     assert len(atps) == 1
     (got,) = atps
     assert got.save_path == "expected"
-    got_split = resumedb.split_resume_data(got)
-    assert got_split.info_hashes == split.info_hashes
+    assert resumedb.info_hashes(got) == resumedb.info_hashes(atp)
 
 
 # Remove invalidated tests after https://github.com/arvidn/libtorrent/issues/6913
@@ -108,7 +103,7 @@ def test_update_resume_data(
 def test_delete(ti: lt.torrent_info, conn: apsw.Connection, valid: bool) -> None:
     if valid:
         resumedb.update_info_hashes(ti.info_hashes(), conn)
-        resumedb.update_info(ti.info_hashes(), ti.info_section(), conn)
+        resumedb.update_info(ti, conn)
 
     resumedb.delete(ti.info_hashes(), conn)
 
@@ -123,11 +118,10 @@ def test_update_resume_data_delete(
 ) -> None:
     if valid:
         resumedb.update_info_hashes(ti.info_hashes(), conn)
-        resumedb.update_info(ti.info_hashes(), ti.info_section(), conn)
+        resumedb.update_info(ti, conn)
 
     atp.save_path = "expected"
-    split = resumedb.split_resume_data(atp)
-    resumedb.update_resume_data(split.info_hashes, split.resume_data, conn)
+    resumedb.update_resume_data(atp, conn)
 
     resumedb.delete(ti.info_hashes(), conn)
 

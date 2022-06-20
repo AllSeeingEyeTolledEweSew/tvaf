@@ -21,7 +21,6 @@ from typing import Callable
 from typing import cast
 from typing import Iterable
 from typing import Iterator
-from typing import NamedTuple
 from typing import Optional
 
 import apsw
@@ -61,10 +60,10 @@ get_version = MIGRATIONS.get_format
 upgrade = MIGRATIONS.upgrade
 
 
-def _ih_bytes(info_hashes: lt.info_hash_t) -> tuple[Optional[bytes], Optional[bytes]]:
+def _ih_bytes(ih: lt.info_hash_t) -> tuple[Optional[bytes], Optional[bytes]]:
     return (
-        info_hashes.v1.to_bytes() if info_hashes.has_v1() else None,
-        info_hashes.v2.to_bytes() if info_hashes.has_v2() else None,
+        ih.v1.to_bytes() if ih.has_v1() else None,
+        ih.v2.to_bytes() if ih.has_v2() else None,
     )
 
 
@@ -73,8 +72,8 @@ def _log_ih_bytes(info_sha1: Optional[bytes], info_sha256: Optional[bytes]) -> s
     return f"[{','.join(strs)}]"
 
 
-def _log_ih(info_hashes: lt.info_hash_t) -> str:
-    return _log_ih_bytes(*_ih_bytes(info_hashes))
+def _log_ih(ih: lt.info_hash_t) -> str:
+    return _log_ih_bytes(*_ih_bytes(ih))
 
 
 def iter_resume_data_from_db(conn: apsw.Connection) -> Iterator[lt.add_torrent_params]:
@@ -121,64 +120,49 @@ def iter_resume_data_from_db(conn: apsw.Connection) -> Iterator[lt.add_torrent_p
             )
 
 
-class ResumeData(NamedTuple):
-    info_hashes: lt.info_hash_t
-    resume_data: bytes
-    info: Optional[bytes] = None
+def copy(atp: lt.add_torrent_params) -> lt.add_torrent_params:
+    # TODO: use copy constructor when available
+    with ltpy.translate_exceptions():
+        return lt.read_resume_data(lt.write_resume_data_buf(atp))
 
 
-def split_resume_data(atp: lt.add_torrent_params) -> ResumeData:
+def info_hashes(atp: lt.add_torrent_params) -> lt.info_hash_t:
+    if atp.ti is not None:
+        return atp.ti.info_hashes()
+    return atp.info_hashes
+
+
+def resume_data(atp: lt.add_torrent_params) -> bytes:
     if atp.ti is None:
         with ltpy.translate_exceptions():
-            return ResumeData(
-                info_hashes=atp.info_hashes, resume_data=lt.write_resume_data_buf(atp)
-            )
-    else:
-        # It's legal to create an add_torrent_params setting only ti and not
-        # info_hashes
-        # It would be more efficient to set ti to None and call
-        # write_resume_data_buf(), but it turns out the mutation is visible to
-        # other alert handlers
-        with ltpy.translate_exceptions():
-            bdecoded = lt.write_resume_data(atp)
-        info = bdecoded.pop(b"info", None)
-        # Normalize resume_data, such that using it without the info looks the same as
-        # using a magnet link. Ensure file-format major is a compatible version though
-        info_hashes = atp.ti.info_hashes()
-        assert bdecoded[b"file-version"] == 1
-        bdecoded[b"info-hash"] = info_hashes.v1.to_bytes()
-        bdecoded[b"info-hash2"] = info_hashes.v2.to_bytes()
-        with ltpy.translate_exceptions():
-            resume_data = lt.bencode(bdecoded)
-        if info is not None:
-            with ltpy.translate_exceptions():
-                info = lt.bencode(info)
-        return ResumeData(info_hashes=info_hashes, resume_data=resume_data, info=info)
+            return lt.write_resume_data_buf(atp)
+    atp = copy(atp)
+    atp.ti = None
+    with ltpy.translate_exceptions():
+        return lt.write_resume_data_buf(atp)
 
 
 def insert_or_ignore_resume_data(
-    info_hashes: lt.info_hash_t, resume_data: bytes, conn: apsw.Connection
+    atp: lt.add_torrent_params, conn: apsw.Connection
 ) -> None:
     conn.cursor().execute(
         "INSERT OR IGNORE INTO torrent (info_sha1, info_sha256, resume_data) "
         "VALUES (?1, ?2, ?3)",
-        (*_ih_bytes(info_hashes), resume_data),
+        (*_ih_bytes(info_hashes(atp)), resume_data(atp)),
     )
 
 
-def update_resume_data(
-    info_hashes: lt.info_hash_t, resume_data: bytes, conn: apsw.Connection
-) -> None:
+def update_resume_data(atp: lt.add_torrent_params, conn: apsw.Connection) -> None:
     # Change OR to AND when https://github.com/arvidn/libtorrent/issues/6913 is fixed
     conn.cursor().execute(
         "UPDATE torrent SET resume_data = ?3 "
         "WHERE (info_sha1 IS ?1) OR (info_sha256 IS ?2)",
-        (*_ih_bytes(info_hashes), resume_data),
+        (*_ih_bytes(info_hashes(atp)), resume_data(atp)),
     )
 
 
-def update_info_hashes(info_hashes: lt.info_hash_t, conn: apsw.Connection) -> None:
-    params = _ih_bytes(info_hashes)
+def update_info_hashes(ih: lt.info_hash_t, conn: apsw.Connection) -> None:
+    params = _ih_bytes(ih)
     info_sha1, info_sha256 = params
     if info_sha1 is None or info_sha256 is None:
         return
@@ -194,23 +178,21 @@ def update_info_hashes(info_hashes: lt.info_hash_t, conn: apsw.Connection) -> No
     )
 
 
-def update_info(
-    info_hashes: lt.info_hash_t, info: bytes, conn: apsw.Connection
-) -> None:
+def update_info(ti: lt.torrent_info, conn: apsw.Connection) -> None:
     # Change OR to AND when https://github.com/arvidn/libtorrent/issues/6913 is fixed
     conn.cursor().execute(
         "UPDATE torrent SET info = ?3 "
         "WHERE (info_sha1 IS ?1) OR (info_sha256 IS ?2) "
         "AND (info IS NULL)",
-        (*_ih_bytes(info_hashes), info),
+        (*_ih_bytes(ti.info_hashes()), ti.info_section()),
     )
 
 
-def delete(info_hashes: lt.info_hash_t, conn: apsw.Connection) -> None:
+def delete(ih: lt.info_hash_t, conn: apsw.Connection) -> None:
     # Change OR to AND when https://github.com/arvidn/libtorrent/issues/6913 is fixed
     conn.cursor().execute(
         "DELETE FROM torrent WHERE (info_sha1 IS ?1) OR (info_sha256 IS ?2)",
-        _ih_bytes(info_hashes),
+        _ih_bytes(ih),
     )
 
 
