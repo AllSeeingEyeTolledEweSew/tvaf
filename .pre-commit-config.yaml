@@ -2,7 +2,7 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
 - repo: https://github.com/Lucas-C/pre-commit-hooks
-  rev: v1.2.0
+  rev: v1.3.0
   hooks:
     - id: insert-license
       args: [--license-filepath, LICENSE]
@@ -26,7 +26,7 @@ repos:
     - id: autoflake
       args: [--in-place, --remove-unused-variables, --remove-all-unused-imports, --remove-duplicate-keys]
 - repo: https://github.com/python/black
-  rev: 22.3.0
+  rev: 22.6.0
   hooks:
     - id: black
     - id: black
