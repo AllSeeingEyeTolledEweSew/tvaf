@@ -83,7 +83,9 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
             self.session.add_torrent(self.atp)
 
             alert = await asyncio.wait_for(iterator.__anext__(), 5)
-            self.assertIsInstance(alert, lt.add_torrent_alert)
+            # The alert order changed subtly in
+            # https://github.com/arvidn/libtorrent/pull/6897
+            self.assertIsInstance(alert, (lt.add_torrent_alert, lt.torrent_added_alert))
 
     async def test_filter_by_handle(self) -> None:
         other_torrent = tdummy.Torrent.single_file(
