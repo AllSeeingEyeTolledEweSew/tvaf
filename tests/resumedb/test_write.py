@@ -93,7 +93,8 @@ def get_atps(
     conn: apsw.Connection,
 ) -> Callable[[], Awaitable[list[lt.add_torrent_params]]]:
     def inner_in_thread() -> list[lt.add_torrent_params]:
-        return list(resumedb.iter_resume_data_from_db(conn))
+        with dbver.begin(conn, dbver.DEFERRED):
+            return list(resumedb.iter_resume_data_from_db(conn))
 
     async def inner() -> list[lt.add_torrent_params]:
         return await asyncio.to_thread(inner_in_thread)
