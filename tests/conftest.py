@@ -14,11 +14,17 @@
 import enum
 import functools
 import random
+from typing import Any
+from typing import Callable
+from typing import Coroutine
 from typing import Iterator
 from typing import Protocol
+from typing import TypeVar
 
+import anyio
 import libtorrent as lt
 import pytest
+from typing_extensions import ParamSpec
 
 from tests import epfake
 from tvaf import caches as caches_lib
@@ -79,3 +85,25 @@ def mkatp(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> MkAtp:
     return functools.partial(_mkatp, tmp_path_factory)
+
+
+_T = TypeVar("_T")
+_P = ParamSpec("_P")
+
+
+def timeout(
+    delay: float,
+) -> Callable[
+    [Callable[_P, Coroutine[Any, Any, _T]]], Callable[_P, Coroutine[Any, Any, _T]]
+]:
+    def wrapper(
+        func: Callable[_P, Coroutine[Any, Any, _T]]
+    ) -> Callable[_P, Coroutine[Any, Any, _T]]:
+        @functools.wraps(func)
+        async def run(*args: _P.args, **kwargs: _P.kwargs) -> _T:
+            with anyio.fail_after(delay):
+                return await func(*args, **kwargs)
+
+        return run
+
+    return wrapper

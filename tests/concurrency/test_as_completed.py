@@ -13,9 +13,11 @@
 
 import asyncio
 
+from tests import conftest
 from tvaf import concurrency
 
 
+@conftest.timeout(5)
 async def test_cleanup() -> None:
     async def returner_func() -> int:
         return 0
@@ -32,8 +34,5 @@ async def test_cleanup() -> None:
     # NB: for the async generator to be cleaned up, it must be marked
     # for cleanup by garbage collection, then __aexit__ is invoked by
     # the event loop
-    async def wait_forever_done() -> None:
-        while not forever.done():
-            await asyncio.sleep(0)
-
-    await asyncio.wait_for(wait_forever_done(), 10)
+    while not forever.done():
+        await asyncio.sleep(0)

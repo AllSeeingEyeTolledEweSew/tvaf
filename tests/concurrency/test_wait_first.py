@@ -15,6 +15,7 @@ import asyncio
 
 import pytest
 
+from tests import conftest
 from tvaf import concurrency
 
 
@@ -22,23 +23,25 @@ class DummyException(Exception):
     pass
 
 
+@conftest.timeout(5)
 async def test_first_completed() -> None:
     async def noop() -> None:
         pass
 
     forever = asyncio.get_event_loop().create_future()
-    await asyncio.wait_for(concurrency.wait_first((noop(), forever)), 5)
+    await concurrency.wait_first((noop(), forever))
     assert forever.done()
     assert forever.cancelled()
 
 
+@conftest.timeout(5)
 async def test_exception() -> None:
     async def raise_dummy() -> None:
         raise DummyException()
 
     forever = asyncio.get_event_loop().create_future()
     with pytest.raises(DummyException):
-        await asyncio.wait_for(concurrency.wait_first((raise_dummy(), forever)), 5)
+        await concurrency.wait_first((raise_dummy(), forever))
     assert forever.done()
     assert forever.cancelled()
 

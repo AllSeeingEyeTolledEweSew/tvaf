@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import importlib.metadata
 import importlib.resources
@@ -25,11 +24,11 @@ import pathlib
 import tempfile
 import time
 from typing import Any
-from typing import AsyncIterator
 from typing import Iterator
 import unittest
 import unittest.mock
 
+import anyio
 import asgi_lifespan
 import httpx
 import libtorrent as lt
@@ -66,15 +65,6 @@ def create_isolated_session_service(
 def loop_until_timeout(timeout: float, msg: str = "condition") -> Iterator[None]:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        yield
-    raise AssertionError(f"{msg} timed out")
-
-
-async def aloop_until_timeout(
-    timeout: float, msg: str = "condition"
-) -> AsyncIterator[None]:
-    deadline = asyncio.get_event_loop().time() + timeout
-    while asyncio.get_event_loop().time() < deadline:
         yield
     raise AssertionError(f"{msg} timed out")
 
@@ -174,13 +164,15 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
         self.lifespan_manager = asgi_lifespan.LifespanManager(
             app_lib.APP, startup_timeout=None, shutdown_timeout=None
         )
-        await asyncio.wait_for(self.lifespan_manager.__aenter__(), 5)
+        with anyio.fail_after(5):
+            await self.lifespan_manager.__aenter__()
 
         # https://github.com/encode/httpx/issues/2239: httpx doesn't honor timeouts for
         # ASGI/WSGI
 
         async def app_with_timeout(*args) -> None:
-            await asyncio.wait_for(app_lib.APP(*args), 5)
+            with anyio.fail_after(5):
+                await app_lib.APP(*args)
 
         self.client = httpx.AsyncClient(
             app=app_with_timeout,
@@ -190,8 +182,9 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def asyncTearDown(self) -> None:
-        await self.client.aclose()
-        await asyncio.wait_for(self.lifespan_manager.__aexit__(None, None, None), 5)
+        with anyio.fail_after(5):
+            await self.client.aclose()
+            await self.lifespan_manager.__aexit__(None, None, None)
         await concurrency.to_thread(os.chdir, self.cwd)
         await concurrency.to_thread(self.tempdir.cleanup)
 
@@ -203,10 +196,11 @@ class AppTestWithTorrent(AppTest):
 
         atp = self.torrent.atp()
         atp.save_path = self.tempdir.name
-        session = await asyncio.wait_for(services.get_session(), 5)
-        self.handle = await concurrency.to_thread(session.add_torrent, atp)
-        # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
-        # checking silently fails in libtorrent 1.2.8.
-        await asyncio.wait_for(wait_done_checking_or_error(self.handle), 5)
+        with anyio.fail_after(5):
+            session = await services.get_session()
+            self.handle = await concurrency.to_thread(session.add_torrent, atp)
+            # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
+            # checking silently fails in libtorrent 1.2.8.
+            await wait_done_checking_or_error(self.handle)
         for i, piece in enumerate(self.torrent.pieces):
             self.handle.add_piece(i, piece, 0)

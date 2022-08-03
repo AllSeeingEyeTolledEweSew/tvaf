@@ -26,7 +26,6 @@ import libtorrent as lt
 import pytest
 
 from tests import conftest
-from tests import lib
 from tvaf import concurrency
 from tvaf._internal import resumedb
 
@@ -103,6 +102,7 @@ def get_atps(
 
 
 # TODO: parametrize concurrency somehow?
+@conftest.timeout(5)
 async def test_write(
     task: asyncio.Task,
     queue: resumedb.Queue,
@@ -111,17 +111,19 @@ async def test_write(
 ) -> None:
     _put(queue, resumedb.insert_or_ignore_resume_data, atp)
     got_atps: Optional[list[lt.add_torrent_params]] = None
-    async for _ in lib.aloop_until_timeout(5, msg="atp write"):
+    while True:
         got_atps = await get_atps()
         if got_atps:
             break
+        await asyncio.sleep(0)
     assert got_atps is not None
     assert len(got_atps) == 1
     assert resumedb.info_hashes(got_atps[0]) == resumedb.info_hashes(atp)
     queue.put_nowait(None)
-    await asyncio.wait_for(task, 5)
+    await task
 
 
+@conftest.timeout(5)
 async def test_add_jobs_after_cancel(
     task: asyncio.Task,
     queue: resumedb.Queue,
@@ -130,11 +132,12 @@ async def test_add_jobs_after_cancel(
 ) -> None:
     queue.put_nowait(None)
     _put(queue, resumedb.insert_or_ignore_resume_data, atp)
-    await asyncio.wait_for(task, 5)
+    await task
     got_atps = await get_atps()
     assert got_atps == []
 
 
+@conftest.timeout(5)
 async def test_batch(
     task: asyncio.Task,
     queue: resumedb.Queue,
@@ -146,13 +149,14 @@ async def test_batch(
     _put(queue, resumedb.insert_or_ignore_resume_data, atp2)
     queue.put_nowait(None)
     _put(queue, resumedb.insert_or_ignore_resume_data, atp3)
-    await asyncio.wait_for(task, 5)
+    await task
     got_atps = await get_atps()
     got_hashes = {resumedb.info_hashes(a) for a in got_atps}
     expected_hashes = {resumedb.info_hashes(a) for a in (atp1, atp2)}
     assert got_hashes == expected_hashes
 
 
+@conftest.timeout(5)
 async def test_busyerror(
     task: asyncio.Task,
     cov: resumedb.WriteCoverage,
@@ -163,18 +167,17 @@ async def test_busyerror(
 ) -> None:
     await asyncio.to_thread(conn.cursor().execute, "BEGIN IMMEDIATE")
     _put(queue, resumedb.insert_or_ignore_resume_data, atp)
-    async for _ in lib.aloop_until_timeout(5, msg="busy"):
-        if cov.get("busy"):
-            break
+    while not cov.get("busy"):
         await asyncio.sleep(0)
     await asyncio.to_thread(conn.cursor().execute, "ROLLBACK")
     got_atps: Optional[list[lt.add_torrent_params]] = None
-    async for _ in lib.aloop_until_timeout(5, msg="atp write"):
+    while True:
         got_atps = await get_atps()
         if got_atps:
             break
+        await asyncio.sleep(0)
     assert got_atps is not None
     assert len(got_atps) == 1
     assert resumedb.info_hashes(got_atps[0]) == resumedb.info_hashes(atp)
     queue.put_nowait(None)
-    await asyncio.wait_for(task, 5)
+    await task
