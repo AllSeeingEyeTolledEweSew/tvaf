@@ -13,12 +13,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Hashable
+from collections.abc import Iterator
 import pathlib
 import tempfile
 from typing import Any
 from typing import cast
-from typing import Hashable
-from typing import Iterator
 import unittest
 
 import apsw

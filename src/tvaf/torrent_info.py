@@ -12,9 +12,9 @@
 # PERFORMANCE OF THIS SOFTWARE.
 from __future__ import annotations
 
-from typing import Awaitable
+from collections.abc import Awaitable
+from collections.abc import Iterable
 from typing import Callable
-from typing import Iterable
 from typing import TypeVar
 
 import libtorrent as lt

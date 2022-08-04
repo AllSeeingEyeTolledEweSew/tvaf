@@ -14,13 +14,13 @@ from __future__ import annotations
 
 import asyncio
 import collections
+from collections.abc import AsyncGenerator
+from collections.abc import Collection
+from collections.abc import Iterable
+from collections.abc import Iterator
 import contextlib
 import logging
 from typing import Any
-from typing import AsyncGenerator
-from typing import Collection
-from typing import Iterable
-from typing import Iterator
 from typing import Optional
 import warnings
 

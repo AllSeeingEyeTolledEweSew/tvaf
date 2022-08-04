@@ -13,13 +13,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from collections.abc import Mapping
 import importlib.metadata
 import sys
 from typing import Any
 from typing import Callable
 from typing import Generic
-from typing import Iterable
-from typing import Mapping
 from typing import TypeVar
 import warnings
 

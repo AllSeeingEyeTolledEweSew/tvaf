@@ -13,12 +13,12 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from collections.abc import Awaitable
 import contextlib
 import logging
 import pathlib
 from typing import Any
-from typing import AsyncIterator
-from typing import Awaitable
 from typing import Callable
 
 import libtorrent as lt

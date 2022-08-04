@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import asyncio
 import collections
+from collections.abc import AsyncGenerator
+from collections.abc import MutableMapping
+from collections.abc import Sequence
 import contextlib
 import logging
-from typing import AsyncGenerator
 from typing import cast
-from typing import MutableMapping
 from typing import Optional
-from typing import Sequence
 import weakref
 
 import libtorrent as lt

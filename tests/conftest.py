@@ -11,13 +11,13 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from collections.abc import Coroutine
+from collections.abc import Iterator
 import enum
 import functools
 import random
 from typing import Any
 from typing import Callable
-from typing import Coroutine
-from typing import Iterator
 from typing import Protocol
 from typing import TypeVar
 

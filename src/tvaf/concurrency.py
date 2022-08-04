@@ -14,20 +14,20 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from collections.abc import Awaitable
+from collections.abc import Iterable
+from collections.abc import Iterator
+from collections.abc import MutableMapping
 import contextlib
 import contextvars
 import functools
 import inspect
 import itertools
 from typing import Any
-from typing import AsyncIterator
-from typing import Awaitable
 from typing import Callable
 from typing import cast
 from typing import Generic
-from typing import Iterable
-from typing import Iterator
-from typing import MutableMapping
 from typing import Optional
 from typing import overload
 from typing import TypeVar

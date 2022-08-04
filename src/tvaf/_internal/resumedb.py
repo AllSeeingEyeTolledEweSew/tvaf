@@ -12,13 +12,13 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 import asyncio
+from collections.abc import Awaitable
+from collections.abc import Iterable
+from collections.abc import Iterator
 import logging
 from typing import Any
-from typing import Awaitable
 from typing import Callable
 from typing import cast
-from typing import Iterable
-from typing import Iterator
 from typing import Optional
 from typing import TypedDict
 

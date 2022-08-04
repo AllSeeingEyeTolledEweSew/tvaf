@@ -11,8 +11,8 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+from collections.abc import AsyncIterator
 import contextlib
-from typing import AsyncIterator
 
 import pytest
 

@@ -12,12 +12,12 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 import asyncio
+from collections.abc import Awaitable
+from collections.abc import Iterator
 import functools
 import pathlib
 from typing import Any
-from typing import Awaitable
 from typing import Callable
-from typing import Iterator
 from typing import Optional
 
 import apsw

@@ -13,14 +13,14 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable
+from collections.abc import Iterator
 import contextlib
 import functools
 import logging
 import math
 from typing import Any
-from typing import Awaitable
 from typing import Callable
-from typing import Iterator
 from typing import Optional
 import warnings
 

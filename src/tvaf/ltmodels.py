@@ -13,6 +13,8 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Iterator
+from collections.abc import Sequence
 import datetime
 import enum
 import functools
@@ -20,9 +22,7 @@ import operator
 import re
 from typing import Any
 from typing import Callable
-from typing import Iterator
 from typing import Optional
-from typing import Sequence
 from typing import TYPE_CHECKING
 from typing import Union
 

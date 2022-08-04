@@ -13,11 +13,11 @@
 from __future__ import annotations
 
 import builtins
+from collections.abc import Generator
 import contextlib
 import enum
 import errno
 import os
-from typing import Generator
 from typing import Optional
 from typing import TypeVar
 

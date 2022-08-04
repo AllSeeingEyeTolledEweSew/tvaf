@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import collections
+from collections.abc import Iterable
 import email.message
 import importlib
 import importlib.metadata
@@ -22,7 +23,6 @@ import os
 import pathlib
 import sys
 from typing import Any
-from typing import Iterable
 from typing import Optional
 from typing import Union
 import uuid

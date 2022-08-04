@@ -14,10 +14,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 import os
 import pathlib
 import tempfile
-from typing import Sequence
 import unittest
 
 import libtorrent as lt

@@ -14,9 +14,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 import contextlib
 import logging
-from typing import Iterator
 
 import fastapi
 import libtorrent as lt

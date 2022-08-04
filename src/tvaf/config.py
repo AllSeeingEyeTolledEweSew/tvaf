@@ -73,15 +73,15 @@ Example:
 """
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from collections.abc import MutableMapping
 import contextlib
 import json
 import os
 import pathlib
 from typing import Any
 from typing import AsyncContextManager
-from typing import AsyncIterator
 from typing import Callable
-from typing import MutableMapping
 from typing import Optional
 from typing import TypeVar
 from typing import Union

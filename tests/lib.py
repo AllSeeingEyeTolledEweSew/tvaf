@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 import importlib
 import importlib.metadata
 import importlib.resources
@@ -24,7 +25,6 @@ import pathlib
 import tempfile
 import time
 from typing import Any
-from typing import Iterator
 import unittest
 import unittest.mock
 

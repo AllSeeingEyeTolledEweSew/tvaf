@@ -14,9 +14,9 @@
 """Utilities for serving HTTP byte-range requests according to RFC 7233."""
 from __future__ import annotations
 
+from collections.abc import Sequence
 import re
 from typing import Any
-from typing import Sequence
 import uuid
 
 from starlette.datastructures import Headers

@@ -14,11 +14,11 @@
 """Utility functions for tvaf."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 import io
 import os
 import socket
 import sys
-from typing import Iterator
 
 
 def bitmap_is_set(bitmap: bytes, i: int) -> bool:

@@ -41,10 +41,10 @@ input and opt-in from tracker administrators about how this would work.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
+from collections.abc import Mapping
 import contextlib
-from typing import Awaitable
 from typing import Callable
-from typing import Mapping
 
 import libtorrent as lt
 

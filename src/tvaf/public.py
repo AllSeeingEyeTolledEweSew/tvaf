@@ -14,8 +14,8 @@
 """Support for the public swarm."""
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 import contextlib
-from typing import AsyncIterator
 
 import libtorrent as lt
 

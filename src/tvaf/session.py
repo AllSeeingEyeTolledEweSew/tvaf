@@ -13,12 +13,12 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from collections.abc import Collection
+from collections.abc import Iterator
 import contextlib
 import logging
 from typing import Any
-from typing import AsyncIterator
-from typing import Collection
-from typing import Iterator
 
 import libtorrent as lt
 

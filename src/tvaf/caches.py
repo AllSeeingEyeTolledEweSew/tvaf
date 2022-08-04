@@ -12,9 +12,9 @@
 # PERFORMANCE OF THIS SOFTWARE.
 from __future__ import annotations
 
+from collections.abc import Awaitable
 import functools
 from typing import Any
-from typing import Awaitable
 from typing import Callable
 from typing import cast
 from typing import Generic
