@@ -150,14 +150,14 @@ class ResumeService:
             # - add the new info hash for our record
             # Further alerts (including torrent_removed_alert) won't match the
             # record, as we key records by the *combination* of hashes.
-            if not await concurrency.to_thread(
+            if not await asyncio.to_thread(
                 ltpy.handle_in_session, handle, self._session
             ):
                 return None
             try:
                 with ltpy.translate_exceptions():
                     # DOES block
-                    ti = await concurrency.to_thread(handle.torrent_file)
+                    ti = await asyncio.to_thread(handle.torrent_file)
             except ltpy.InvalidTorrentHandleError:
                 return None
             # metadata_received_alert is only emitted when we have the complete info
@@ -271,11 +271,9 @@ class ResumeService:
         # scales, but I don't know of a better way to do this right now
         with ltpy.translate_exceptions():
             # DOES block
-            handles = await concurrency.to_thread(self._session.get_torrents)
+            handles = await asyncio.to_thread(self._session.get_torrents)
         # Dispatch need_save_resume_data() all at once
-        dispatch = [
-            (h, concurrency.to_thread(h.need_save_resume_data)) for h in handles
-        ]
+        dispatch = [(h, asyncio.to_thread(h.need_save_resume_data)) for h in handles]
         # We don't use save_resume_data(flags=only_if_modified), to avoid
         # overloading the alert queue
         for handle, need_save_resume_data in dispatch:
@@ -287,8 +285,6 @@ class ResumeService:
     async def _num_moving_storage(self) -> int:
         with ltpy.translate_exceptions():
             # DOES block
-            handles = await concurrency.to_thread(self._session.get_torrents)
-        statuses = await asyncio.gather(
-            *[concurrency.to_thread(h.status) for h in handles]
-        )
+            handles = await asyncio.to_thread(self._session.get_torrents)
+        statuses = await asyncio.gather(*[asyncio.to_thread(h.status) for h in handles])
         return sum(status.moving_storage for status in statuses)

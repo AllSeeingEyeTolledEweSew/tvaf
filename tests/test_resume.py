@@ -76,7 +76,7 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.resume.wait_closed(), 5)
         self.alert_driver.close()
         await asyncio.wait_for(self.alert_driver.wait_closed(), 5)
-        await concurrency.to_thread(self.tempdir.cleanup)
+        await asyncio.to_thread(self.tempdir.cleanup)
 
     def conn_factory(self) -> apsw.Connection:
         return apsw.Connection(str(self.path / "resume.db"))

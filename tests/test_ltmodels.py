@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import datetime
 import errno
@@ -22,7 +23,6 @@ import unittest
 import libtorrent as lt
 import pydantic
 
-from tvaf import concurrency
 from tvaf import ltmodels
 
 from . import lib
@@ -132,7 +132,7 @@ class Base64Test(unittest.TestCase):
 class TorrentStatusTest(lib.AppTestWithTorrent, lib.TestCase):
     @unittest.skip("flaky")
     async def test_status(self) -> None:
-        orm = await concurrency.to_thread(self.handle.status, flags=0x7FFFFFFF)
+        orm = await asyncio.to_thread(self.handle.status, flags=0x7FFFFFFF)
         status = ltmodels.TorrentStatus.from_orm(orm)
 
         status_dict = json.loads(status.json())

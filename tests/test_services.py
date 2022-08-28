@@ -36,15 +36,15 @@ from . import tdummy
 
 class TemporaryDirectoryTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        self.cwd = await concurrency.to_thread(pathlib.Path.cwd)
-        self.tempdir = await concurrency.to_thread(tempfile.TemporaryDirectory)
-        await concurrency.to_thread(os.chdir, self.tempdir.name)
+        self.cwd = await asyncio.to_thread(pathlib.Path.cwd)
+        self.tempdir = await asyncio.to_thread(tempfile.TemporaryDirectory)
+        await asyncio.to_thread(os.chdir, self.tempdir.name)
         self.config = lib.create_isolated_config()
         await self.config.write_to_disk(services.CONFIG_PATH)
 
     async def asyncTearDown(self) -> None:
-        await concurrency.to_thread(os.chdir, self.cwd)
-        await concurrency.to_thread(self.tempdir.cleanup)
+        await asyncio.to_thread(os.chdir, self.cwd)
+        await asyncio.to_thread(self.tempdir.cleanup)
 
 
 class LifespanTest(TemporaryDirectoryTestCase):
@@ -55,14 +55,14 @@ class LifespanTest(TemporaryDirectoryTestCase):
         await asyncio.wait_for(services.shutdown(), 5)
 
     async def test_with_config(self) -> None:
-        self.assertTrue(await concurrency.to_thread(services.CONFIG_PATH.is_file))
+        self.assertTrue(await asyncio.to_thread(services.CONFIG_PATH.is_file))
         async with self.start_stop_session():
             pass
 
     async def test_empty_directory(self) -> None:
         # this technically breaks isolation (non-isolated config listens on
         # default ports and will bootstrap dht, etc), but it must be tested!
-        await concurrency.to_thread(services.CONFIG_PATH.unlink)
+        await asyncio.to_thread(services.CONFIG_PATH.unlink)
         contents = await concurrency.alist(
             concurrency.iter_in_thread(pathlib.Path().iterdir())
         )
@@ -112,7 +112,7 @@ class LifespanTest(TemporaryDirectoryTestCase):
 
         async with self.start_stop_session():
             session = await asyncio.wait_for(services.get_session(), 5)
-            torrents = await concurrency.to_thread(session.get_torrents)
+            torrents = await asyncio.to_thread(session.get_torrents)
             self.assertEqual(len(torrents), 1)
 
     async def test_process_lock(self) -> None:
@@ -131,7 +131,7 @@ class TestDefaultATP(TemporaryDirectoryTestCase):
         await super().asyncTearDown()
 
     async def test_config_defaults(self) -> None:
-        save_path = str(await concurrency.to_thread(pathlib.Path("download").resolve))
+        save_path = str(await asyncio.to_thread(pathlib.Path("download").resolve))
         config = await asyncio.wait_for(services.get_config(), 5)
         self.assertEqual(config["torrent_default_save_path"], save_path)
 
@@ -164,9 +164,7 @@ class TestDefaultATP(TemporaryDirectoryTestCase):
 
     async def test_save_path_loop(self) -> None:
         bad_link = pathlib.Path("bad_link")
-        await concurrency.to_thread(
-            bad_link.symlink_to, bad_link, target_is_directory=True
-        )
+        await asyncio.to_thread(bad_link.symlink_to, bad_link, target_is_directory=True)
 
         config = config_lib.Config(torrent_default_save_path=str(bad_link))
         with self.assertRaises(config_lib.InvalidConfigError):

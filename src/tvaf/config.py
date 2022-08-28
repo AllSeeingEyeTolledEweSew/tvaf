@@ -73,6 +73,7 @@ Example:
 """
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from collections.abc import MutableMapping
 import contextlib
@@ -85,8 +86,6 @@ from typing import Callable
 from typing import Optional
 from typing import TypeVar
 from typing import Union
-
-from . import concurrency
 
 # Design notes:
 
@@ -147,7 +146,7 @@ class Config(dict, MutableMapping[str, Any]):
             InvalidConfigError: If the file contains invalid JSON.
         """
         path = pathlib.Path(path)
-        contents = await concurrency.to_thread(path.read_text)
+        contents = await asyncio.to_thread(path.read_text)
         try:
             data = json.loads(contents)
         except json.JSONDecodeError as exc:
@@ -164,7 +163,7 @@ class Config(dict, MutableMapping[str, Any]):
         """
         path = pathlib.Path(path)
         contents = json.dumps(self, sort_keys=True, indent=4)
-        await concurrency.to_thread(path.write_text, contents)
+        await asyncio.to_thread(path.write_text, contents)
 
     def _get(self, key: str, type_: type[_T]) -> Optional[_T]:
         value = self.get(key)

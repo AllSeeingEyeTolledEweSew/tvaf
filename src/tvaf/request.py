@@ -114,7 +114,7 @@ class _State:
     # race, and deprioritization may be delayed until gc.
     async def read_pieces(self, pieces: Sequence[int]) -> AsyncGenerator[bytes, None]:
         async def check() -> None:
-            if not await concurrency.to_thread(
+            if not await asyncio.to_thread(
                 ltpy.handle_in_session, self._handle, self._session
             ):
                 self.set_exception(ltpy.InvalidTorrentHandleError.create())
@@ -223,7 +223,7 @@ class _State:
     async def _maybe_dht_announce(self) -> None:
         with contextlib.suppress(ltpy.InvalidTorrentHandleError):
             with ltpy.translate_exceptions():
-                status = await concurrency.to_thread(self._handle.status)
+                status = await asyncio.to_thread(self._handle.status)
                 if status.num_peers == 0:
                     self._handle.force_dht_announce()
 

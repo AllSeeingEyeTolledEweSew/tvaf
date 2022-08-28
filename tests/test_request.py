@@ -22,7 +22,6 @@ import unittest
 
 import libtorrent as lt
 
-from tvaf import concurrency
 from tvaf import ltpy
 
 from . import lib
@@ -33,7 +32,7 @@ class TestReadPiecesWithCancellation(request_test_utils.RequestServiceTestCase):
     async def test_remove_before_start(self) -> None:
         self.session.remove_torrent(self.handle)
         # Ensure removal happened before we do read_pieces()
-        while await concurrency.to_thread(self.session.get_torrents):
+        while await asyncio.to_thread(self.session.get_torrents):
             pass
         it = self.service.read_pieces(self.handle, self.all_pieces)
         with self.assertRaises(ltpy.InvalidTorrentHandleError):
@@ -62,10 +61,12 @@ class TestReadPiecesWithCancellation(request_test_utils.RequestServiceTestCase):
         self.session.remove_torrent(self.handle)
         # Create a file in tempdir, try to use it as the save_path
         path = pathlib.Path(self.tempdir.name) / "file.txt"
-        await concurrency.to_thread(path.write_bytes, b"")
+        await asyncio.to_thread(path.write_bytes, b"")
         atp = self.torrent.atp()
         atp.save_path = str(path)
-        self.handle = await concurrency.to_thread(self.session.add_torrent, atp)
+        self.handle = await asyncio.to_thread(
+            self.session.add_torrent, atp  # type: ignore
+        )
         await self.feed_pieces()
 
         it = self.service.read_pieces(self.handle, self.all_pieces)
@@ -115,12 +116,12 @@ class TestReadPieces(request_test_utils.RequestServiceTestCase):
 
     async def test_download(self) -> None:
         seed = lib.create_isolated_session_service().session
-        seed_dir = await concurrency.to_thread(tempfile.TemporaryDirectory)
+        seed_dir = await asyncio.to_thread(tempfile.TemporaryDirectory)
         try:
             atp = self.torrent.atp()
             atp.save_path = seed_dir.name
             atp.flags &= ~lt.torrent_flags.paused
-            seed_handle = await concurrency.to_thread(seed.add_torrent, atp)
+            seed_handle = await asyncio.to_thread(seed.add_torrent, atp)  # type: ignore
             # https://github.com/arvidn/libtorrent/issues/4980: add_piece()
             # while checking silently fails in libtorrent 1.2.8.
             await lib.wait_done_checking_or_error(seed_handle)
@@ -132,13 +133,13 @@ class TestReadPieces(request_test_utils.RequestServiceTestCase):
             # The peer connection takes a long time, not sure why
             pieces = await asyncio.wait_for(self.read(self.all_pieces), 60)
         finally:
-            await concurrency.to_thread(seed_dir.cleanup)
+            await asyncio.to_thread(seed_dir.cleanup)
         self.assertEqual(pieces, self.torrent.pieces)
 
     async def test_read_checked_pieces(self) -> None:
         # write data to disk
         path = pathlib.Path(self.tempdir.name) / os.fsdecode(self.torrent.files[0].path)
-        await concurrency.to_thread(path.write_bytes, self.torrent.files[0].data)
+        await asyncio.to_thread(path.write_bytes, self.torrent.files[0].data)
         # recheck the torrent
         self.handle.force_recheck()
 

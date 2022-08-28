@@ -16,7 +16,6 @@ import asyncio
 import tempfile
 import unittest
 
-from tvaf import concurrency
 from tvaf import services
 
 from . import lib
@@ -130,10 +129,10 @@ class SeedTest(lib.AppTest):
         self.torrent = tdummy.DEFAULT_STABLE
 
         self.seed = lib.create_isolated_session_service().session
-        self.seed_dir = await concurrency.to_thread(tempfile.TemporaryDirectory)
+        self.seed_dir = await asyncio.to_thread(tempfile.TemporaryDirectory)
         atp = self.torrent.atp()
         atp.save_path = self.seed_dir.name
-        handle = await concurrency.to_thread(self.seed.add_torrent, atp)
+        handle = await asyncio.to_thread(self.seed.add_torrent, atp)  # type: ignore
         # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
         # checking silently fails in libtorrent 1.2.8.
         await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 5)
@@ -144,7 +143,7 @@ class SeedTest(lib.AppTest):
 
     async def asyncTearDown(self) -> None:
         await super().asyncTearDown()
-        await concurrency.to_thread(self.seed_dir.cleanup)
+        await asyncio.to_thread(self.seed_dir.cleanup)
 
 
 class PublicFallbackTest(SeedTest, lib.TestCase):

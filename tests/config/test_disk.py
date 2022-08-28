@@ -11,17 +11,17 @@
 # OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 # PERFORMANCE OF THIS SOFTWARE.
 
+import asyncio
 import pathlib
 
 import pytest
 
-from tvaf import concurrency
 from tvaf import config as config_lib
 
 
 async def test_from_disk(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "config.json"
-    await concurrency.to_thread(
+    await asyncio.to_thread(
         path.write_text, '{"text_field": "value", ' '"numeric_field": 123}'
     )
     config = await config_lib.Config.from_disk(path)
@@ -30,7 +30,7 @@ async def test_from_disk(tmp_path: pathlib.Path) -> None:
 
 async def test_from_disk_invalid_json(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "config.json"
-    await concurrency.to_thread(path.write_text, "invalid json")
+    await asyncio.to_thread(path.write_text, "invalid json")
     with pytest.raises(config_lib.InvalidConfigError):
         await config_lib.Config.from_disk(path)
 
@@ -39,7 +39,7 @@ async def test_write(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "config.json"
     config = config_lib.Config(text_field="value", numeric_field=123)
     await config.write_to_disk(path)
-    config_text = await concurrency.to_thread(path.read_text)
+    config_text = await asyncio.to_thread(path.read_text)
     assert (
         config_text == "{\n"
         '    "numeric_field": 123,\n'

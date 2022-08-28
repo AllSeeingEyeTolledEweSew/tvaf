@@ -20,7 +20,6 @@ from collections.abc import Iterable
 from collections.abc import Iterator
 from collections.abc import MutableMapping
 import contextlib
-import contextvars
 import functools
 import inspect
 import itertools
@@ -35,32 +34,6 @@ from typing import TypeVar
 import cachetools.keys
 
 _T = TypeVar("_T")
-
-
-async def to_thread(func: Callable[..., _T], *args: Any, **kwargs: Any) -> _T:
-    """Runs a synchronous function in a thread.
-
-    This is just a syntactic shortcut for
-    asyncio.get_event_loop().run_in_executor().
-
-    contextvars will be preserved when the function is run in the thread.
-
-    Args:
-        func: A synchronous function to be called in a thread.
-        args: Arguments to the function.
-        kwargs: Keyword arguments to the function.
-
-    Returns:
-        The function's return value.
-    """
-    loop = asyncio.get_event_loop()
-    context = contextvars.copy_context()
-    # Not sure why this cast is required
-    bound = cast(
-        Callable[..., _T],
-        functools.partial(context.run, func, *args, **kwargs),
-    )
-    return await loop.run_in_executor(None, bound)
 
 
 async def iter_in_thread(iterator: Iterator[_T], batch_size=100) -> AsyncIterator[_T]:
@@ -89,7 +62,7 @@ async def iter_in_thread(iterator: Iterator[_T], batch_size=100) -> AsyncIterato
         return list(itertools.islice(iterator, batch_size))
 
     while True:
-        batch = await to_thread(iter_batch)
+        batch = await asyncio.to_thread(iter_batch)
         if not batch:
             break
         for obj in batch:

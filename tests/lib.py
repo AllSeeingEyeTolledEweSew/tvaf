@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 import importlib
 import importlib.metadata
@@ -34,7 +35,6 @@ import httpx
 import libtorrent as lt
 
 from tvaf import app as app_lib
-from tvaf import concurrency
 from tvaf import config as config_lib
 from tvaf import services
 from tvaf import session as session_lib
@@ -71,7 +71,7 @@ def loop_until_timeout(timeout: float, msg: str = "condition") -> Iterator[None]
 
 async def wait_done_checking_or_error(handle: lt.torrent_handle) -> None:
     while True:
-        status = await concurrency.to_thread(handle.status)
+        status = await asyncio.to_thread(handle.status)
         if status.state not in (
             lt.torrent_status.states.checking_resume_data,
             lt.torrent_status.states.checking_files,
@@ -156,9 +156,9 @@ class TestCase(unittest.TestCase):
 class AppTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        self.tempdir = await concurrency.to_thread(tempfile.TemporaryDirectory)
-        self.cwd = await concurrency.to_thread(pathlib.Path.cwd)
-        await concurrency.to_thread(os.chdir, self.tempdir.name)
+        self.tempdir = await asyncio.to_thread(tempfile.TemporaryDirectory)
+        self.cwd = await asyncio.to_thread(pathlib.Path.cwd)
+        await asyncio.to_thread(os.chdir, self.tempdir.name)
         self.config = create_isolated_config()
         await self.config.write_to_disk(services.CONFIG_PATH)
         self.lifespan_manager = asgi_lifespan.LifespanManager(
@@ -185,8 +185,8 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
         with anyio.fail_after(5):
             await self.client.aclose()
             await self.lifespan_manager.__aexit__(None, None, None)
-        await concurrency.to_thread(os.chdir, self.cwd)
-        await concurrency.to_thread(self.tempdir.cleanup)
+        await asyncio.to_thread(os.chdir, self.cwd)
+        await asyncio.to_thread(self.tempdir.cleanup)
 
 
 class AppTestWithTorrent(AppTest):
@@ -198,7 +198,9 @@ class AppTestWithTorrent(AppTest):
         atp.save_path = self.tempdir.name
         with anyio.fail_after(5):
             session = await services.get_session()
-            self.handle = await concurrency.to_thread(session.add_torrent, atp)
+            self.handle = await asyncio.to_thread(
+                session.add_torrent, atp  # type: ignore
+            )
             # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
             # checking silently fails in libtorrent 1.2.8.
             await wait_done_checking_or_error(self.handle)

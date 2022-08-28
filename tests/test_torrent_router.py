@@ -13,10 +13,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import unittest
 
-from tvaf import concurrency
 from tvaf import ltpy
 from tvaf import services
 
@@ -72,7 +72,7 @@ class RemoveTest(lib.AppTestWithTorrent, lib.TestCase):
         r = await self.client.delete(f"/torrents/{self.torrent.sha1_hash}")
         self.assertEqual(r.status_code, 200)
         self.assertFalse(
-            await concurrency.to_thread(
+            await asyncio.to_thread(
                 ltpy.handle_in_session,
                 self.handle,
                 await services.get_session(),

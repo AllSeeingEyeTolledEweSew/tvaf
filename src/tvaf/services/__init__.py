@@ -28,7 +28,6 @@ import libtorrent as lt
 
 from tvaf import caches
 
-from .. import concurrency
 from .. import config as config_lib
 from .. import driver as driver_lib
 from .. import plugins
@@ -149,13 +148,13 @@ async def _stage_config_disk(config: config_lib.Config) -> AsyncIterator[None]:
     try:
         yield
         try:
-            await concurrency.to_thread(tmp_path.replace, CONFIG_PATH)
+            await asyncio.to_thread(tmp_path.replace, CONFIG_PATH)
             _LOG.info("config: wrote %s", CONFIG_PATH.resolve())
         except OSError:
             _LOG.exception("couldn't write %s", CONFIG_PATH.resolve())
     finally:
         try:
-            await concurrency.to_thread(tmp_path.unlink)
+            await asyncio.to_thread(tmp_path.unlink)
         except FileNotFoundError:
             pass
         except OSError:

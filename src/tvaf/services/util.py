@@ -20,7 +20,6 @@ import libtorrent as lt
 
 from tvaf import caches
 
-from .. import concurrency
 from .. import ltpy
 from .. import services
 
@@ -29,7 +28,7 @@ from .. import services
 async def get_torrent_info(handle: lt.torrent_handle) -> lt.torrent_info:
     async def get() -> Optional[lt.torrent_info]:
         with ltpy.translate_exceptions():
-            return await concurrency.to_thread(handle.torrent_file)
+            return await asyncio.to_thread(handle.torrent_file)
 
     driver = await services.get_alert_driver()
     with driver.iter_alerts(

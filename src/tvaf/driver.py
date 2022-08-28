@@ -190,7 +190,8 @@ class AlertDriver:
         if handle and raise_if_removed:
 
             async def check() -> None:
-                if not await concurrency.to_thread(
+                assert handle is not None
+                if not await asyncio.to_thread(
                     ltpy.handle_in_session, handle, self._session
                 ):
                     it.set_exception(ltpy.InvalidTorrentHandleError.create())

@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from collections.abc import Iterator
 from collections.abc import Sequence
@@ -87,7 +88,7 @@ class _Helper:
     @concurrency.acached_property
     async def existing_handle(self) -> lt.torrent_handle:
         session = await services.get_session()
-        return await concurrency.to_thread(
+        return await asyncio.to_thread(
             session.find_torrent, self.info_hashes.get_best()
         )
 
@@ -96,7 +97,7 @@ class _Helper:
         handle = await self.existing_handle
         if not handle.is_valid():
             return None
-        return await concurrency.to_thread(handle.torrent_file)
+        return await asyncio.to_thread(handle.torrent_file)
 
     @concurrency.acached_property
     async def torrent_info(self) -> lt.torrent_info:
@@ -152,7 +153,7 @@ class _Helper:
         session = await services.get_session()
         # TODO: check against the requested network
         with ltpy.translate_exceptions():
-            return await concurrency.to_thread(session.add_torrent, atp)
+            return await asyncio.to_thread(session.add_torrent, atp)  # type: ignore
 
 
 @ROUTER.api_route("/btih/{info_hash}/i/{file_index}", methods=["GET", "HEAD"])

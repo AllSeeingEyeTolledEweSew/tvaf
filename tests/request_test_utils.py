@@ -17,7 +17,6 @@ import asyncio
 import tempfile
 import unittest
 
-from tvaf import concurrency
 from tvaf import driver as driver_lib
 from tvaf import request as request_lib
 
@@ -28,7 +27,7 @@ from . import tdummy
 class RequestServiceTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.torrent = tdummy.DEFAULT
-        self.tempdir = await concurrency.to_thread(tempfile.TemporaryDirectory)
+        self.tempdir = await asyncio.to_thread(tempfile.TemporaryDirectory)
 
         self.session_service = lib.create_isolated_session_service()
         self.session = self.session_service.session
@@ -43,7 +42,9 @@ class RequestServiceTestCase(unittest.IsolatedAsyncioTestCase):
 
         atp = self.torrent.atp()
         atp.save_path = self.tempdir.name
-        self.handle = await concurrency.to_thread(self.session.add_torrent, atp)
+        self.handle = await asyncio.to_thread(
+            self.session.add_torrent, atp  # type: ignore
+        )
         self.all_pieces = range(len(self.torrent.pieces))
 
     async def asyncTearDown(self) -> None:
@@ -51,14 +52,14 @@ class RequestServiceTestCase(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.service.wait_closed(), 5)
         self.alert_driver.close()
         await asyncio.wait_for(self.alert_driver.wait_closed(), 5)
-        await concurrency.to_thread(self.tempdir.cleanup)
+        await asyncio.to_thread(self.tempdir.cleanup)
 
     async def feed_pieces(self) -> None:
         piece_indexes = list(range(len(self.torrent.pieces)))
         # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
         # checking silently fails in libtorrent 1.2.8.
         await asyncio.wait_for(lib.wait_done_checking_or_error(self.handle), 5)
-        if (await concurrency.to_thread(self.handle.status)).errc.value() != 0:
+        if (await asyncio.to_thread(self.handle.status)).errc.value() != 0:
             return
         for i in piece_indexes:
             self.handle.add_piece(i, self.torrent.pieces[i], 0)

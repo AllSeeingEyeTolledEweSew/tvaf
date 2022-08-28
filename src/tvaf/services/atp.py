@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from collections.abc import Awaitable
 import contextlib
@@ -25,7 +26,6 @@ import libtorrent as lt
 
 from tvaf import caches
 
-from .. import concurrency
 from .. import config as config_lib
 from .. import plugins
 from .. import services
@@ -68,7 +68,7 @@ async def _get_defaults_from_config(
     save_path = pathlib.Path(config.require_str("torrent_default_save_path"))
     try:
         # Raises RuntimeError on symlink loops
-        save_path = await concurrency.to_thread(save_path.resolve)
+        save_path = await asyncio.to_thread(save_path.resolve)
     except RuntimeError as exc:
         raise config_lib.InvalidConfigError(str(exc)) from exc
 
