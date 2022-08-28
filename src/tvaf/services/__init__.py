@@ -16,17 +16,21 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from collections.abc import Awaitable
+from collections.abc import Coroutine
 import contextlib
 import logging
 import pathlib
+from typing import Any
 from typing import AsyncContextManager
 from typing import Callable
+from typing import Optional
 
 import apsw
 import dbver
 import libtorrent as lt
 
 from tvaf import caches
+from tvaf._internal import main
 
 from .. import config as config_lib
 from .. import driver as driver_lib
@@ -46,7 +50,7 @@ _STARTUP_FUNCS: plugins.Funcs[Startup] = plugins.Funcs("tvaf.services.startup")
 startup_plugin = _STARTUP_FUNCS.decorator
 
 
-async def startup() -> None:
+async def do_startup() -> None:
     for _, func in sorted(_STARTUP_FUNCS.get().items()):
         await func()
 
@@ -56,9 +60,50 @@ _SHUTDOWN_FUNCS: plugins.Funcs[Shutdown] = plugins.Funcs("tvaf.services.shutdown
 shutdown_plugin = _SHUTDOWN_FUNCS.decorator
 
 
-async def shutdown() -> None:
+async def do_shutdown() -> None:
     for _, func in sorted(_SHUTDOWN_FUNCS.get().items()):
         await func()
+
+
+_main: Optional[main.MainTaskLifespanAdaptor] = None
+
+
+async def startup() -> None:
+    global _main
+    assert _main is None
+    try:
+        _main = main.MainTaskLifespanAdaptor(do_startup, do_shutdown)
+        await _main.startup()
+    except BaseException:
+        _main = None
+        raise
+
+
+async def shutdown() -> None:
+    global _main
+    assert _main is not None
+    try:
+        await _main.shutdown()
+    finally:
+        _main = None
+
+
+def start_soon_from_main(
+    func: Callable[..., Coroutine[Any, Any, Any]],
+    *args: Any,
+    name: str = None,
+) -> None:
+    assert _main is not None
+    _main.start_soon(func, *args, name=name)
+
+
+def cancel_main(msg: str = None) -> None:
+    global _main
+    try:
+        if _main is not None:
+            _main.cancel(msg=msg)
+    finally:
+        _main = None
 
 
 StageConfig = Callable[[config_lib.Config], AsyncContextManager]
@@ -178,23 +223,6 @@ async def _stage_config_session_service(
     session_service = await get_session_service()
     async with session_service.stage_config(config):
         yield
-
-
-@startup_plugin("00_process")
-async def _lock_process() -> None:
-    global _process_locked
-    _LOG.debug("startup: acquiring process lock")
-    if _process_locked:
-        raise AssertionError("only one instance allowed")
-    _process_locked = True
-
-
-@shutdown_plugin("99_process")
-async def _unlock_process() -> None:
-    global _process_locked
-    assert _process_locked
-    _LOG.debug("shutdown: releasing process lock")
-    _process_locked = False
 
 
 @startup_plugin("20_alert")
