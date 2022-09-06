@@ -12,6 +12,8 @@
 # PERFORMANCE OF THIS SOFTWARE.
 
 
+from typing import cast
+
 import apsw
 import libtorrent as lt
 import pytest
@@ -31,12 +33,12 @@ def conn() -> apsw.Connection:
     params=(conftest.V1, conftest.V2, conftest.HYBRID), ids=lambda v: f"{v.name}"
 )
 def proto(request: pytest.FixtureRequest) -> conftest.Proto:
-    return request.param  # type: ignore
+    return cast(conftest.Proto, request.param)
 
 
 @pytest.fixture(params=(True, False), ids=("magnet", "full"))
 def magnet(request: pytest.FixtureRequest) -> bool:
-    return request.param  # type: ignore
+    return cast(bool, request.param)
 
 
 @pytest.fixture

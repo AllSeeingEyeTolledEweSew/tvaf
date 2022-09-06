@@ -30,7 +30,7 @@ cases = (
 
 @pytest.fixture(params=cases, ids=lambda p: f"{p[0].name}-{p[1].name}")
 def protos(request: pytest.FixtureRequest) -> tuple[conftest.Proto, conftest.Proto]:
-    magnet_proto, proto = request.param  # type: ignore
+    magnet_proto, proto = request.param
     assert (magnet_proto & proto) == magnet_proto
     return (magnet_proto, proto)
 

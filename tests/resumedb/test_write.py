@@ -18,6 +18,7 @@ import functools
 import pathlib
 from typing import Any
 from typing import Callable
+from typing import cast
 from typing import Optional
 
 import apsw
@@ -56,7 +57,7 @@ def conn(pool: dbver.Pool[apsw.Connection]) -> Iterator[apsw.Connection]:
     params=(conftest.V1, conftest.V2, conftest.HYBRID), ids=lambda v: f"{v.name}"
 )
 def proto(request: pytest.FixtureRequest) -> conftest.Proto:
-    return request.param  # type: ignore
+    return cast(conftest.Proto, request.param)
 
 
 @pytest.fixture
