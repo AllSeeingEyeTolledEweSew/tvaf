@@ -19,7 +19,6 @@ from collections.abc import Awaitable
 from collections.abc import Iterable
 from collections.abc import Iterator
 from collections.abc import MutableMapping
-import contextlib
 import functools
 import inspect
 import itertools
@@ -263,59 +262,6 @@ def acached_property(func: Callable[[Any], Awaitable[_T]]) -> _AcachedProperty[_
 async def alist(it: AsyncIterator[_T]) -> list[_T]:
     """Returns an AsyncIterator as a list."""
     return [item async for item in it]
-
-
-async def as_completed(
-    aws: Iterable[Awaitable[_T]],
-) -> AsyncIterator[asyncio.Future[_T]]:
-    """Yields coroutines in the order they complete.
-
-    This is like asyncio.as_completed(), but the tasks will be cancelled when
-    the generator is cleaned up. This makes it simple for a caller to spawn
-    several coroutines, find the first result matching a condition, and cancel
-    the rest.
-
-    As with asyncio.as_completed(), the awaitables will be scheduled as tasks.
-
-    Args:
-        aws: Awaitables to iterate over.
-
-    Returns:
-        An iterator of futures, in completion order.
-    """
-    tasks = {ensure_future(aw) for aw in aws}
-    try:
-        for future in asyncio.as_completed(tasks):
-            yield future
-    finally:
-        for task in tasks:
-            task.cancel()
-
-
-@contextlib.contextmanager
-def as_completed_ctx(
-    aws: Iterable[Awaitable[_T]],
-) -> Iterator[Iterator[asyncio.Future[_T]]]:
-    """Yields coroutines in the order they complete.
-
-    This is the same as as_completed(), except that tasks will be immediately
-    cancelled when the context manager exits. This makes cancellation more
-    timely.
-
-    Args:
-        aws: Awaitables to iterate over.
-
-    Returns:
-        A context manager whose value is an iterator of futures. The futures
-        will represent the results of the input awaitables, in completion
-        order.
-    """
-    tasks = {ensure_future(aw) for aw in aws}
-    try:
-        yield asyncio.as_completed(tasks)
-    finally:
-        for task in tasks:
-            task.cancel()
 
 
 class _MissingType:
