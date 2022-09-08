@@ -114,7 +114,8 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
         self.session.remove_torrent(handle)
         with self.assertRaises(ltpy.InvalidTorrentHandleError):
             with self.driver.iter_alerts(lt.alert_category.status, handle=handle) as it:
-                await asyncio.wait_for(it.__anext__(), 5)
+                async for alert in it:
+                    pass
 
     async def test_alert_mask(self) -> None:
         def alerts_enabled() -> bool:

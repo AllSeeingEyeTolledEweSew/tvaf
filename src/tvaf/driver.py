@@ -118,15 +118,22 @@ class _Iterator:
         ):
             self.set_exception(ltpy.InvalidTorrentHandleError.create())
 
+    async def _wait_for_alerts_or_exception(self) -> Iterable[lt.alert]:
+        async with anyio.create_task_group() as task_group:
+
+            async def wait_for_exception() -> None:
+                await asyncio.shield(self._exc)
+
+            task_group.start_soon(wait_for_exception)
+            alerts = await asyncio.shield(self._alerts)
+            task_group.cancel_scope.cancel()
+            return alerts
+
     async def iterator(self) -> AsyncGenerator[lt.alert, None]:
         async with anyio.create_task_group() as task_group:
             task_group.start_soon(self._set_exception_if_removed)
             while True:
-                await concurrency.wait_first(
-                    (asyncio.shield(self._alerts), asyncio.shield(self._exc))
-                )
-                alerts = self._alerts.result()
-                for alert in alerts:
+                for alert in await self._wait_for_alerts_or_exception():
                     yield alert
                 self.maybe_release()
 
