@@ -24,6 +24,7 @@ from typing import Any
 from typing import Optional
 import warnings
 
+import anyio
 import libtorrent as lt
 
 from . import concurrency
@@ -79,10 +80,14 @@ class _Iterator:
         refcount: concurrency.RefCount,
         types: Collection[_Type],
         handle: Optional[lt.torrent_handle],
+        session: lt.session,
+        raise_if_removed: bool,
     ) -> None:
         self.types = types
         self.handle = handle
         self._refcount = refcount
+        self._session = session
+        self._raise_if_removed = raise_if_removed
 
         self._alerts: asyncio.Future[
             Iterable[lt.alert]
@@ -105,15 +110,25 @@ class _Iterator:
             # Don't warn if exception was never retrieved
             self._exc.exception()
 
+    async def _set_exception_if_removed(self) -> None:
+        if self.handle is None or not self._raise_if_removed:
+            return
+        if not await asyncio.to_thread(
+            ltpy.handle_in_session, self.handle, self._session
+        ):
+            self.set_exception(ltpy.InvalidTorrentHandleError.create())
+
     async def iterator(self) -> AsyncGenerator[lt.alert, None]:
-        while True:
-            await concurrency.wait_first(
-                (asyncio.shield(self._alerts), asyncio.shield(self._exc))
-            )
-            alerts = self._alerts.result()
-            for alert in alerts:
-                yield alert
-            self.maybe_release()
+        async with anyio.create_task_group() as task_group:
+            task_group.start_soon(self._set_exception_if_removed)
+            while True:
+                await concurrency.wait_first(
+                    (asyncio.shield(self._alerts), asyncio.shield(self._exc))
+                )
+                alerts = self._alerts.result()
+                for alert in alerts:
+                    yield alert
+                self.maybe_release()
 
 
 class AlertDriver:
@@ -186,17 +201,13 @@ class AlertDriver:
         handle: lt.torrent_handle = None,
         raise_if_removed=True,
     ) -> Iterator[AsyncGenerator[lt.alert, None]]:
-        it = _Iterator(refcount=self._refcount, types=types, handle=handle)
-        if handle and raise_if_removed:
-
-            async def check() -> None:
-                assert handle is not None
-                if not await asyncio.to_thread(
-                    ltpy.handle_in_session, handle, self._session
-                ):
-                    it.set_exception(ltpy.InvalidTorrentHandleError.create())
-
-            asyncio.create_task(check())
+        it = _Iterator(
+            refcount=self._refcount,
+            types=types,
+            handle=handle,
+            session=self._session,
+            raise_if_removed=raise_if_removed,
+        )
         try:
             self._index(it)
             self._session_service.inc_alert_mask(alert_mask)
