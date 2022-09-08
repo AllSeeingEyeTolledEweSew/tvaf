@@ -46,9 +46,9 @@ from collections.abc import Mapping
 import contextlib
 from typing import Callable
 
+import anyio
 import libtorrent as lt
 
-from . import concurrency
 from . import plugins
 
 ConfigureSwarm = Callable[[lt.add_torrent_params], Awaitable]
@@ -126,17 +126,15 @@ async def get_name_to_configure_swarm(
     Returns:
         A mapping from swarm name to ConfigureSwarm functions.
     """
-    # Runs all AccessSwarm functions in parallel
-    name_to_task = {
-        name: concurrency.ensure_future(access(info_hashes))
-        for name, access in get_name_to_access_swarm().items()
-    }
     name_to_configure_swarm: dict[str, ConfigureSwarm] = {}
-    try:
-        for name, task in name_to_task.items():
-            with contextlib.suppress(KeyError):
-                name_to_configure_swarm[name] = await task
-    finally:
-        for task in name_to_task.values():
-            task.cancel()
+
+    async def add_access(name: str, access: AccessSwarm) -> None:
+        with contextlib.suppress(KeyError):
+            name_to_configure_swarm[name] = await access(info_hashes)
+
+    async with anyio.create_task_group() as task_group:
+        for name, access in get_name_to_access_swarm().items():
+            task_group.start_soon(
+                add_access, name, access, name=f"access swarm: {name} for {info_hashes}"
+            )
     return name_to_configure_swarm
