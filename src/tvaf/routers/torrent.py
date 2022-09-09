@@ -18,6 +18,7 @@ from collections.abc import Iterator
 import contextlib
 import logging
 
+import anyio
 import fastapi
 import libtorrent as lt
 
@@ -54,19 +55,18 @@ async def get_torrents() -> list[ltmodels.TorrentStatus]:
     session = await services.get_session()
     with ltpy.translate_exceptions():
         handles = await asyncio.to_thread(session.get_torrents)
-    status_list: list[ltmodels.TorrentStatus] = []
-    aws = [asyncio.to_thread(h.status, flags=0x7FFFFFFF) for h in handles]
-    tasks = [asyncio.create_task(aw) for aw in aws]
-    try:
-        for task in tasks:
-            with contextlib.suppress(ltpy.InvalidTorrentHandleError):
-                with ltpy.translate_exceptions():
-                    status = ltmodels.TorrentStatus.from_orm(await task)
-                status_list.append(status)
-    finally:
-        for task in tasks:
-            task.cancel()
-    return status_list
+    index_to_status_model: dict[int, ltmodels.TorrentStatus] = {}
+
+    async def fetch_one_status(index: int, handle: lt.torrent_handle) -> None:
+        with contextlib.suppress(ltpy.InvalidTorrentHandleError):
+            with ltpy.translate_exceptions():
+                status = await asyncio.to_thread(handle.status, flags=0x7FFFFFFF)
+        index_to_status_model[index] = ltmodels.TorrentStatus.from_orm(status)
+
+    async with anyio.create_task_group() as task_group:
+        for index, handle in enumerate(handles):
+            task_group.start_soon(fetch_one_status, index, handle)
+    return [status for _, status in sorted(index_to_status_model.items())]
 
 
 @ROUTER.get("/{info_hash}")
