@@ -17,6 +17,8 @@ import asyncio
 import tempfile
 import unittest
 
+import anyio
+
 from tvaf import driver as driver_lib
 from tvaf import request as request_lib
 
@@ -37,7 +39,7 @@ class RequestServiceTestCase(unittest.IsolatedAsyncioTestCase):
             session=self.session,
         )
 
-        self.alert_driver.start()
+        self.alert_driver_task = asyncio.create_task(self.alert_driver.run())
         self.service.start()
 
         atp = self.torrent.atp()
@@ -50,8 +52,9 @@ class RequestServiceTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self.service.close()
         await asyncio.wait_for(self.service.wait_closed(), 60)
-        self.alert_driver.close()
-        await asyncio.wait_for(self.alert_driver.wait_closed(), 60)
+        self.alert_driver.shutdown()
+        with anyio.fail_after(60):
+            await self.alert_driver_task
         await asyncio.to_thread(self.tempdir.cleanup)
 
     async def feed_pieces(self) -> None:

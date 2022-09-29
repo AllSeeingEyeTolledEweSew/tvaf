@@ -17,7 +17,7 @@ import collections
 from collections.abc import AsyncIterator
 from collections.abc import Collection
 from collections.abc import Iterable
-from collections.abc import Iterator
+from collections.abc import Sequence
 import contextlib
 import logging
 from typing import Any
@@ -29,10 +29,11 @@ import warnings
 import anyio
 import libtorrent as lt
 
+from tvaf._internal import pop_alerts as pop_alerts_lib
+
 from . import concurrency
 from . import ltpy
 from . import session as session_lib
-from . import util
 
 _LOG = logging.getLogger(__name__)
 
@@ -82,19 +83,14 @@ class _Iterator:
         refcount: concurrency.RefCount,
         types: Collection[_Type],
         handle: Optional[lt.torrent_handle],
-        session: lt.session,
-        raise_if_removed: bool,
     ) -> None:
         self.types = types
         self.handle = handle
         self._refcount = refcount
-        self._session = session
-        self._raise_if_removed = raise_if_removed
 
         self._alerts: asyncio.Future[
             Iterable[lt.alert]
         ] = asyncio.get_event_loop().create_future()
-        self._exc = asyncio.get_event_loop().create_future()
 
     def feed(self, alerts: Collection[lt.alert]) -> None:
         if alerts:
@@ -106,42 +102,19 @@ class _Iterator:
             self._alerts = asyncio.get_event_loop().create_future()
             self._refcount.release()
 
-    def set_exception(self, exc: BaseException) -> None:
-        if not self._exc.done():
-            self._exc.set_exception(exc)
-            # Don't warn if exception was never retrieved
-            self._exc.exception()
-
-    async def _set_exception_if_removed(self) -> None:
-        if self.handle is None or not self._raise_if_removed:
-            return
-        if not await asyncio.to_thread(
-            ltpy.handle_in_session, self.handle, self._session
-        ):
-            self.set_exception(ltpy.InvalidTorrentHandleError.create())
-
-    async def _wait_for_alerts_or_exception(self) -> Iterable[lt.alert]:
-        async with anyio.create_task_group() as task_group:
-
-            async def wait_for_exception() -> None:
-                await asyncio.shield(self._exc)
-
-            task_group.start_soon(wait_for_exception)
-            alerts = await asyncio.shield(self._alerts)
-            task_group.cancel_scope.cancel()
-            return alerts
-
-    async def _iter_alerts(self) -> AsyncIterator[lt.alert]:
+    async def iterator(self) -> AsyncIterator[lt.alert]:
         while True:
-            for alert in await self._wait_for_alerts_or_exception():
+            for alert in await asyncio.shield(self._alerts):
                 yield alert
             self.maybe_release()
 
-    @contextlib.asynccontextmanager
-    async def get_iterator(self) -> AsyncIterator[AsyncIterator[lt.alert]]:
-        async with anyio.create_task_group() as task_group:
-            task_group.start_soon(self._set_exception_if_removed)
-            yield self._iter_alerts()
+
+class Error(Exception):
+    pass
+
+
+class ShutdownError(Error):
+    pass
 
 
 class IterAlerts(Protocol):
@@ -162,13 +135,11 @@ class AlertDriver:
     def __init__(self, *, session_service: session_lib.SessionService) -> None:
         self._session_service = session_service
         self._session = session_service.session
+        self._shutdown = asyncio.get_event_loop().create_future()
 
         # A shared counter of how many iterators *may* be referencing the
         # current batch of alerts
         self._refcount = concurrency.RefCount()
-        # The current batch of alerts, used for iter_alerts(start=...).
-        self._alerts: list[lt.alert] = []
-        self._alert_to_index: dict[lt.alert, int] = {}
 
         # Iterators indexed by their filter parameters. If type or handle is
         # None, it indicates the type/handle is not filtered, and those
@@ -177,8 +148,6 @@ class AlertDriver:
             Optional[_Type],
             dict[Optional[lt.torrent_handle], set[_Iterator]],
         ] = collections.defaultdict(lambda: collections.defaultdict(set))
-
-        self._rfile, self._wfile = util.selectable_pipe()
 
     def _index(self, it: _Iterator) -> None:
         types: Iterable[Optional[_Type]] = it.types
@@ -196,10 +165,13 @@ class AlertDriver:
                 if not handle_to_iters:
                     del self._type_to_handle_to_iters[type_]
 
-    def _all_iters(self) -> Iterator[_Iterator]:
-        for handle_to_iters in self._type_to_handle_to_iters.values():
-            for iters in handle_to_iters.values():
-                yield from iters
+    async def _do_raise_if_removed(self, handle: lt.torrent_handle) -> None:
+        if not await asyncio.to_thread(ltpy.handle_in_session, handle, self._session):
+            raise ltpy.InvalidTorrentHandleError.create()
+
+    async def _do_raise_on_shutdown(self) -> None:
+        await asyncio.shield(self._shutdown)
+        raise ShutdownError()
 
     # Design notes: ideally this would just return an AsyncGenerator. But if
     # the generator references alerts and is then "dropped" (canceled or
@@ -225,36 +197,33 @@ class AlertDriver:
         handle: lt.torrent_handle = None,
         raise_if_removed=True,
     ) -> AsyncIterator[AsyncIterator[lt.alert]]:
-        it = _Iterator(
-            refcount=self._refcount,
-            types=types,
-            handle=handle,
-            session=self._session,
-            raise_if_removed=raise_if_removed,
-        )
-        with self._session_service.alert_mask(alert_mask):
-            try:
-                self._index(it)
-                async with it.get_iterator() as real_iterator:
-                    yield real_iterator
-            finally:
-                it.maybe_release()
-                self._deindex(it)
+        it = _Iterator(refcount=self._refcount, types=types, handle=handle)
+        try:
+            self._index(it)
+            async with contextlib.AsyncExitStack() as stack:
+                stack.enter_context(self._session_service.alert_mask(alert_mask))
+                if raise_if_removed and handle is not None:
+                    check_task_group = await stack.enter_async_context(
+                        anyio.create_task_group()
+                    )
+                    check_task_group.start_soon(self._do_raise_if_removed, handle)
+                watchdog_task_group = await stack.enter_async_context(
+                    anyio.create_task_group()
+                )
+                watchdog_task_group.start_soon(self._do_raise_on_shutdown)
+                yield it.iterator()
+                watchdog_task_group.cancel_scope.cancel()
+        finally:
+            self._deindex(it)
+            it.maybe_release()
 
-    async def pump_alerts(self) -> None:
-        await self._refcount.wait_zero()
-
-        with ltpy.translate_exceptions():
-            # Does not block (I think)
-            self._alerts = self._session.pop_alerts()
-        self._alert_to_index = {alert: i for i, alert in enumerate(self._alerts)}
-
-        for alert in self._alerts:
+    def feed(self, alerts: Sequence[lt.alert]) -> None:
+        for alert in alerts:
             log_alert(alert)
 
         # Feed alerts to their iterators
         iter_alerts: dict[_Iterator, list[lt.alert]] = collections.defaultdict(list)
-        for alert in self._alerts:
+        for alert in alerts:
             lookup_types = (alert.__class__, None)
             lookup_handles: Collection[Optional[lt.torrent_handle]]
             if isinstance(alert, lt.torrent_alert):
@@ -271,13 +240,13 @@ class AlertDriver:
         for it, alerts in iter_alerts.items():
             it.feed(alerts)
 
-    async def _pump_alerts_from_notify(self) -> None:
-        # Looping forever is better than nothing (?)
+    async def wait_safe(self) -> None:
         while True:
             try:
-                await asyncio.wait_for(self.pump_alerts(), self.TIMEOUT)
+                with anyio.fail_after(self.TIMEOUT):
+                    await self._refcount.wait_zero()
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 msg = (
                     "Alert pump timed out after "
                     f"{self.TIMEOUT}s"
@@ -287,23 +256,22 @@ class AlertDriver:
                 # If we continue timing out, continue to pester the user
                 _LOG.warning(msg)
 
-    def start(self) -> None:
-        def notify():
-            # This reads the entire nonblocking buffer
-            self._rfile.read()
-            asyncio.create_task(self._pump_alerts_from_notify())
+    def shutdown(self) -> None:
+        self._shutdown.set_result(None)
 
-        asyncio.get_event_loop().add_reader(self._rfile, notify)
-        # This *does* fire immediately, if there are pending alerts
-        self._session.set_alert_fd(self._wfile.fileno())
+    async def run(self) -> None:
+        _LOG.debug("AlertDriver starting up...")
+        try:
+            async with anyio.create_task_group() as task_group:
 
-    def close(self) -> None:
-        for it in self._all_iters():
-            it.set_exception(asyncio.CancelledError())
-        self._session.set_alert_fd(-1)
-        asyncio.get_event_loop().remove_reader(self._rfile)
-        self._rfile.close()
-        self._wfile.close()
+                async def cancel_on_shutdown() -> None:
+                    await self._shutdown
+                    task_group.cancel_scope.cancel()
 
-    async def wait_closed(self) -> None:
-        await self._refcount.wait_zero()
+                task_group.start_soon(cancel_on_shutdown)
+                with pop_alerts_lib.get_pop_alerts(self._session) as pop_alerts:
+                    while True:
+                        await self.wait_safe()
+                        self.feed(await pop_alerts())
+        finally:
+            _LOG.debug("AlertDriver shutting down")

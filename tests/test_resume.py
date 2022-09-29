@@ -21,6 +21,7 @@ from typing import Any
 from typing import cast
 import unittest
 
+import anyio
 import apsw
 import dbver
 import libtorrent as lt
@@ -69,13 +70,14 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
             pool=dbver.null_pool(self.conn_factory),
         )
         self.resume.start()
-        self.alert_driver.start()
+        self.alert_driver_task = asyncio.create_task(self.alert_driver.run())
 
     async def asyncTearDown(self) -> None:
         self.resume.close()
         await asyncio.wait_for(self.resume.wait_closed(), 60)
-        self.alert_driver.close()
-        await asyncio.wait_for(self.alert_driver.wait_closed(), 60)
+        self.alert_driver.shutdown()
+        with anyio.fail_after(60):
+            await self.alert_driver_task
         await asyncio.to_thread(self.tempdir.cleanup)
 
     def conn_factory(self) -> apsw.Connection:

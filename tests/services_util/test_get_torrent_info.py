@@ -65,10 +65,10 @@ async def iter_alerts(
     session_service: session_lib.SessionService,
 ) -> AsyncIterator[driver_lib.IterAlerts]:
     alert_driver = driver_lib.AlertDriver(session_service=session_service)
-    alert_driver.start()
+    task = asyncio.create_task(alert_driver.run())
     yield alert_driver.iter_alerts
-    alert_driver.close()
-    await alert_driver.wait_closed()
+    alert_driver.shutdown()
+    await task
 
 
 @conftest.timeout(60)

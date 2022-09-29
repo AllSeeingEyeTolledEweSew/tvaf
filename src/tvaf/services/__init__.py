@@ -227,7 +227,7 @@ async def _stage_config_session_service(
 
 @startup_plugin("20_alert")
 async def _startup_alert_driver() -> None:
-    (await get_alert_driver()).start()
+    start_soon_from_main((await get_alert_driver()).run)
 
 
 @startup_plugin("20_resume")
@@ -268,11 +268,8 @@ async def _shutdown_save_resume_data() -> None:
 
 
 @shutdown_plugin("90_alerts")
-async def _shutdown_drain_alerts() -> None:
-    # Wait for alert consumers to finish
-    alert_driver = await get_alert_driver()
-    alert_driver.close()
-    await alert_driver.wait_closed()
+async def _shutdown_alert_driver() -> None:
+    (await get_alert_driver()).shutdown()
 
 
 @shutdown_plugin("98_clear")

@@ -17,6 +17,7 @@ import asyncio
 import tempfile
 import unittest
 
+import anyio
 import libtorrent as lt
 
 from tvaf import driver as driver_lib
@@ -41,15 +42,16 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
         self.session = self.session_service.session
         self.driver = driver_lib.AlertDriver(session_service=self.session_service)
         self.iter_alerts: driver_lib.IterAlerts = self.driver.iter_alerts
-        self.driver.start()
+        self.task = asyncio.create_task(self.driver.run())
         self.tempdir = tempfile.TemporaryDirectory()
         self.torrent = tdummy.DEFAULT
         self.atp = self.torrent.atp()
         self.atp.save_path = self.tempdir.name
 
     async def asyncTearDown(self) -> None:
-        self.driver.close()
-        await asyncio.wait_for(self.driver.wait_closed(), 60)
+        self.driver.shutdown()
+        with anyio.fail_after(60):
+            await self.task
         self.tempdir.cleanup()
 
     async def test_see_alert(self) -> None:
