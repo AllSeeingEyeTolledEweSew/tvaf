@@ -50,6 +50,7 @@ def pool(conn_factory: Callable[[], apsw.Connection]) -> dbver.Pool[apsw.Connect
 @pytest.fixture
 def conn(pool: dbver.Pool[apsw.Connection]) -> Iterator[apsw.Connection]:
     with pool() as local_conn:
+        local_conn.setbusytimeout(5000)
         yield local_conn
 
 
