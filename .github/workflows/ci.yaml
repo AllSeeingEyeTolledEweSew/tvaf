@@ -3,14 +3,35 @@ on:
   pull_request:
   push:
     branches: [ master ]
+concurrency:
+   group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}
+   cancel-in-progress: true
 jobs:
   test:
     runs-on: ${{ matrix.os }}
     continue-on-error: true
     strategy:
+      # Our goal is to run torture tests for 15 minutes, to test concurrency
+      # issues. We maximize the maximum github free plan concurrency limits
+      # (20 jobs total, 5 macos jobs). We assume non-test CI jobs (pre-commit)
+      # take negligible time.
       matrix:
         py: [ "3.9", "3.10" ]
         os: [ ubuntu-latest, macos-latest ]
+        shard: [ "0", "1" ]
+        include:
+          - { py: "3.9", os: ubuntu-latest, shard: "2" }
+          - { py: "3.9", os: ubuntu-latest, shard: "3" }
+          - { py: "3.9", os: ubuntu-latest, shard: "4" }
+          - { py: "3.9", os: ubuntu-latest, shard: "5" }
+          - { py: "3.9", os: ubuntu-latest, shard: "6" }
+          - { py: "3.9", os: ubuntu-latest, shard: "7" }
+          - { py: "3.10", os: ubuntu-latest, shard: "2" }
+          - { py: "3.10", os: ubuntu-latest, shard: "3" }
+          - { py: "3.10", os: ubuntu-latest, shard: "4" }
+          - { py: "3.10", os: ubuntu-latest, shard: "5" }
+          - { py: "3.10", os: ubuntu-latest, shard: "6" }
+          - { py: "3.10", os: ubuntu-latest, shard: "7" }
     steps:
       - uses: actions/checkout@v3
         with:
@@ -21,7 +42,13 @@ jobs:
       - run: |
           pip install --upgrade pip
           pip install tox
-      - run: tox -- --log-level=DEBUG
+      - timeout-minutes: 20
+        run: |
+          end=$(($(date +%s) + 900))
+          while [ $(date +%s) -le $end ]
+          do
+            tox -- --log-level=DEBUG
+          done
       - uses: codecov/codecov-action@v3
   pre-commit:
     runs-on: ${{ matrix.os }}
