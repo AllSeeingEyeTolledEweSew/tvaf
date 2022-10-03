@@ -85,6 +85,11 @@ repos:
           src/tvaf/util.py|
           src/tvaf/xmemoryview.py
         )$
+- repo: https://github.com/pappasam/toml-sort
+  rev: v0.20.1
+  hooks:
+    - id: toml-sort
+      args: [--all, --in-place]
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v4.3.0
   hooks:

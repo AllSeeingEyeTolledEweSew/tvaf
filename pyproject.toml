@@ -1,18 +1,18 @@
 [build-system]
-requires = ["setuptools>=42", "wheel", "setuptools_scm[toml]>=3.4"]
 build-backend = "setuptools.build_meta"
-
-[tool.setuptools_scm]
+requires = ["setuptools>=42", "wheel", "setuptools_scm[toml]>=3.4"]
 
 [tool.isort]
+known_third_party = ["libtorrent"]
 profile = "google"
 single_line_exclusions = []
-known_third_party = ["libtorrent"]
 
 [tool.pytest.ini_options]
-filterwarnings = "error"
 addopts = "-rw"
 asyncio_mode = "auto"
-usefixtures = "caches"
+filterwarnings = "error"
 log_date_format = "%Y-%m-%d %H:%M:%S"
 log_format = "%(asctime)s %(levelname)s %(message)s"
+usefixtures = "caches"
+
+[tool.setuptools_scm]
