@@ -28,6 +28,7 @@ from typing_extensions import ParamSpec
 
 from tests import epfake
 from tvaf import caches as caches_lib
+from tvaf import config as config_lib
 
 
 @pytest.fixture
@@ -107,3 +108,16 @@ def timeout(
         return run
 
     return wrapper
+
+
+@pytest.fixture
+def config() -> config_lib.Config:
+    return config_lib.Config(
+        session_enable_dht=False,
+        session_enable_lsd=False,
+        session_enable_natpmp=False,
+        session_enable_upnp=False,
+        session_listen_interfaces="127.0.0.1:0",
+        session_alert_mask=0,
+        session_dht_bootstrap_nodes="",
+    )
