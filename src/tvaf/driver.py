@@ -21,7 +21,9 @@ from collections.abc import Iterator
 import contextlib
 import logging
 from typing import Any
+from typing import ContextManager
 from typing import Optional
+from typing import Protocol
 import warnings
 
 import anyio
@@ -136,6 +138,17 @@ class _Iterator:
                 for alert in await self._wait_for_alerts_or_exception():
                     yield alert
                 self.maybe_release()
+
+
+class IterAlerts(Protocol):
+    def __call__(
+        self,
+        alert_mask: int,
+        *types: _Type,
+        handle: lt.torrent_handle = None,
+        raise_if_removed=True,
+    ) -> ContextManager[AsyncGenerator[lt.alert, None]]:
+        ...
 
 
 class AlertDriver:
