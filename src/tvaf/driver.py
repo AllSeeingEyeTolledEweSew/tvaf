@@ -215,14 +215,13 @@ class AlertDriver:
             session=self._session,
             raise_if_removed=raise_if_removed,
         )
-        try:
-            self._index(it)
-            self._session_service.inc_alert_mask(alert_mask)
-            yield it.iterator()
-        finally:
-            it.maybe_release()
-            self._deindex(it)
-            self._session_service.dec_alert_mask(alert_mask)
+        with self._session_service.alert_mask(alert_mask):
+            try:
+                self._index(it)
+                yield it.iterator()
+            finally:
+                it.maybe_release()
+                self._deindex(it)
 
     async def pump_alerts(self) -> None:
         await self._refcount.wait_zero()

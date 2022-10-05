@@ -134,18 +134,21 @@ class SessionService:
     def _dec_alert_mask_bits(self, alert_mask: int) -> None:
         for bit in _get_mask_bits(alert_mask):
             self._alert_mask_bit_count[bit] -= 1
+            assert self._alert_mask_bit_count[bit] >= 0
             if self._alert_mask_bit_count[bit] == 0:
                 self._alert_mask_bit_count.pop(bit)
 
-    def inc_alert_mask(self, alert_mask: int) -> None:
-        self._inc_alert_mask_bits(alert_mask)
-        # Can't fail to update alert mask (?)
-        self._update_alert_mask()
-
-    def dec_alert_mask(self, alert_mask: int) -> None:
-        self._dec_alert_mask_bits(alert_mask)
-        # Can't fail to update alert mask (?)
-        self._update_alert_mask()
+    @contextlib.contextmanager
+    def alert_mask(self, alert_mask: int) -> Iterator:
+        try:
+            self._inc_alert_mask_bits(alert_mask)
+            # Can't fail to update alert mask (?)
+            self._update_alert_mask()
+            yield
+        finally:
+            self._dec_alert_mask_bits(alert_mask)
+            # Can't fail to update alert mask (?)
+            self._update_alert_mask()
 
     def _update_alert_mask(self) -> None:
         alert_mask = self._get_alert_mask()

@@ -57,26 +57,25 @@ class TestSession(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(settings["alert_mask"], 1 | 2)
 
         # Test we can add a runtime mask
-        session_service.inc_alert_mask(1 | 8)
-        settings = session_service.session.get_settings()
-        self.assertEqual(settings["alert_mask"], 1 | 2 | 8)
+        with session_service.alert_mask(1 | 8):
+            settings = session_service.session.get_settings()
+            self.assertEqual(settings["alert_mask"], 1 | 2 | 8)
 
-        # Test we can unset alert mask via config
-        config["session_alert_mask"] = 0
-        async with session_service.stage_config(config):
-            pass
-        settings = session_service.session.get_settings()
-        self.assertEqual(settings["alert_mask"], 1 | 8)
+            # Test we can unset alert mask via config
+            config["session_alert_mask"] = 0
+            async with session_service.stage_config(config):
+                pass
+            settings = session_service.session.get_settings()
+            self.assertEqual(settings["alert_mask"], 1 | 8)
 
-        # Test we can change alert mask via config
-        config["session_alert_mask"] = 4
-        async with session_service.stage_config(config):
-            pass
-        settings = session_service.session.get_settings()
-        self.assertEqual(settings["alert_mask"], 1 | 4 | 8)
+            # Test we can change alert mask via config
+            config["session_alert_mask"] = 4
+            async with session_service.stage_config(config):
+                pass
+            settings = session_service.session.get_settings()
+            self.assertEqual(settings["alert_mask"], 1 | 4 | 8)
 
         # Test we can remove the runtime mask
-        session_service.dec_alert_mask(1 | 8)
         settings = session_service.session.get_settings()
         self.assertEqual(settings["alert_mask"], 1 | 4)
 
