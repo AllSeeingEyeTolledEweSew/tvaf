@@ -27,19 +27,22 @@ from .. import ltpy
 
 @caches.alru_cache(maxsize=32)
 async def get_torrent_info(
-    *, handle: lt.torrent_handle, iter_alerts: driver_lib.IterAlerts
+    *,
+    handle: lt.torrent_handle,
+    iter_alerts: driver_lib.IterAlerts,
+    _waiting_for_alert: asyncio.Future = None,
 ) -> lt.torrent_info:
     async def get() -> Optional[lt.torrent_info]:
         with ltpy.translate_exceptions():
             return await asyncio.to_thread(handle.torrent_file)
 
-    async with anyio.create_task_group() as task_group:
-        with iter_alerts(
-            lt.alert_category.status,
-            lt.metadata_received_alert,
-            lt.torrent_removed_alert,
-            handle=handle,
-        ) as iterator:
+    with iter_alerts(
+        lt.alert_category.status,
+        lt.metadata_received_alert,
+        lt.torrent_removed_alert,
+        handle=handle,
+    ) as iterator:
+        async with anyio.create_task_group() as task_group:
 
             async def wait_for_metadata() -> None:
                 async for alert in iterator:
@@ -56,6 +59,8 @@ async def get_torrent_info(
             if ti is not None:
                 task_group.cancel_scope.cancel()
                 return ti
+            if _waiting_for_alert is not None:
+                _waiting_for_alert.set_result(None)
     ti = await get()
     assert ti is not None
     return ti
