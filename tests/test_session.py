@@ -157,12 +157,24 @@ class TestSession(unittest.IsolatedAsyncioTestCase):
             session_lib.SessionService(
                 config=config_lib.Config(session_settings_base="invalid")
             )
+        config = lib.create_isolated_config()
+        session_service = session_lib.SessionService(config=config)
+        config["session_settings_base"] = "invalid"
+        with self.assertRaises(config_lib.InvalidConfigError):
+            async with session_service.stage_config(config):
+                pass
 
     async def test_setting_invalid_type(self) -> None:
         with self.assertRaises(config_lib.InvalidConfigError):
             session_lib.SessionService(
                 config=config_lib.Config(session_cache_size="invalid")
             )
+        config = lib.create_isolated_config()
+        session_service = session_lib.SessionService(config=config)
+        config["session_cache_size"] = "invalid"
+        with self.assertRaises(config_lib.InvalidConfigError):
+            async with session_service.stage_config(config):
+                pass
 
     async def test_alert_mask_invalid_type(self) -> None:
         with self.assertRaises(config_lib.InvalidConfigError):

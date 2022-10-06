@@ -175,7 +175,8 @@ class SessionService:
                 else:
                     _LOG.debug("disabling alerts: %s", name)
         # As far as I can tell, apply_settings never partially fails
-        self.session.apply_settings(deltas)
+        with _translate_exceptions():
+            self.session.apply_settings(deltas)
 
     @contextlib.asynccontextmanager
     async def stage_config(self, config: config_lib.Config) -> AsyncIterator[None]:
