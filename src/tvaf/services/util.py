@@ -20,20 +20,21 @@ import anyio
 import libtorrent as lt
 
 from tvaf import caches
+from tvaf import driver as driver_lib
 
 from .. import ltpy
-from .. import services
 
 
 @caches.alru_cache(maxsize=32)
-async def get_torrent_info(handle: lt.torrent_handle) -> lt.torrent_info:
+async def get_torrent_info(
+    *, handle: lt.torrent_handle, iter_alerts: driver_lib.IterAlerts
+) -> lt.torrent_info:
     async def get() -> Optional[lt.torrent_info]:
         with ltpy.translate_exceptions():
             return await asyncio.to_thread(handle.torrent_file)
 
     async with anyio.create_task_group() as task_group:
-        driver = await services.get_alert_driver()
-        with driver.iter_alerts(
+        with iter_alerts(
             lt.alert_category.status,
             lt.metadata_received_alert,
             lt.torrent_removed_alert,

@@ -101,7 +101,10 @@ class _Helper:
 
     @concurrency.acached_property
     async def torrent_info(self) -> lt.torrent_info:
-        return await services_util.get_torrent_info(await self.valid_handle)
+        return await services_util.get_torrent_info(
+            handle=await self.valid_handle,
+            iter_alerts=(await services.get_alert_driver()).iter_alerts,
+        )
 
     @concurrency.acached_property
     async def bounds(self) -> tuple[int, int]:
