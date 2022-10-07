@@ -40,7 +40,7 @@ def use_thread_wait(request: pytest.FixtureRequest) -> bool:
     return cast(bool, request.param)
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_pop_alerts_pre_setup(
     session: lt.session, atp: lt.add_torrent_params, use_thread_wait: bool
 ) -> None:
@@ -53,7 +53,7 @@ async def test_pop_alerts_pre_setup(
                 break
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 @pytest.mark.parametrize("pre_drain", [True, False])
 async def test_pop_alerts_post_setup(
     session: lt.session,

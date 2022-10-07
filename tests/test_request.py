@@ -36,7 +36,7 @@ class TestReadPiecesWithCancellation(request_test_utils.RequestServiceTestCase):
             pass
         it = self.service.read_pieces(self.handle, self.all_pieces)
         with self.assertRaises(ltpy.InvalidTorrentHandleError):
-            await asyncio.wait_for(it.__anext__(), 5)
+            await asyncio.wait_for(it.__anext__(), 60)
 
     async def test_remove_after_start(self) -> None:
         # Schedule removal after we start read_pieces()
@@ -46,7 +46,7 @@ class TestReadPiecesWithCancellation(request_test_utils.RequestServiceTestCase):
         asyncio.create_task(do_remove())
         it = self.service.read_pieces(self.handle, self.all_pieces)
         with self.assertRaises(ltpy.InvalidTorrentHandleError):
-            await asyncio.wait_for(it.__anext__(), 5)
+            await asyncio.wait_for(it.__anext__(), 60)
 
     async def test_shutdown(self) -> None:
         async def do_close() -> None:
@@ -55,7 +55,7 @@ class TestReadPiecesWithCancellation(request_test_utils.RequestServiceTestCase):
         asyncio.create_task(do_close())
         it = self.service.read_pieces(self.handle, self.all_pieces)
         with self.assertRaises(asyncio.CancelledError):
-            await asyncio.wait_for(it.__anext__(), 5)
+            await asyncio.wait_for(it.__anext__(), 60)
 
     async def test_file_error(self) -> None:
         self.session.remove_torrent(self.handle)
@@ -71,7 +71,7 @@ class TestReadPiecesWithCancellation(request_test_utils.RequestServiceTestCase):
 
         it = self.service.read_pieces(self.handle, self.all_pieces)
         with self.assertRaises(NotADirectoryError):
-            await asyncio.wait_for(it.__anext__(), 5)
+            await asyncio.wait_for(it.__anext__(), 60)
 
     # TODO: test de-prioritization
 
@@ -86,31 +86,31 @@ class TestReadPieces(request_test_utils.RequestServiceTestCase):
 
     async def test_read_all(self) -> None:
         await self.feed_pieces()
-        pieces = await asyncio.wait_for(self.read(self.all_pieces), 5)
+        pieces = await asyncio.wait_for(self.read(self.all_pieces), 60)
         self.assertEqual(pieces, self.torrent.pieces)
 
     async def test_out_of_order(self) -> None:
         await self.feed_pieces()
-        pieces = await asyncio.wait_for(self.read([1, 0]), 5)
+        pieces = await asyncio.wait_for(self.read([1, 0]), 60)
         self.assertEqual(pieces, [self.torrent.pieces[1], self.torrent.pieces[0]])
 
     async def test_duplicates(self) -> None:
         await self.feed_pieces()
-        pieces = await asyncio.wait_for(self.read([0, 0]), 5)
+        pieces = await asyncio.wait_for(self.read([0, 0]), 60)
         self.assertEqual(pieces, [self.torrent.pieces[0], self.torrent.pieces[0]])
 
     @unittest.skip("flaky")
     async def test_repetition(self) -> None:
         await self.feed_pieces()
         for _ in range(5):
-            pieces = await asyncio.wait_for(self.read(self.all_pieces), 5)
+            pieces = await asyncio.wait_for(self.read(self.all_pieces), 60)
             self.assertEqual(pieces, self.torrent.pieces)
 
     async def test_concurrent(self) -> None:
         task1 = asyncio.create_task(self.read(self.all_pieces))
         task2 = asyncio.create_task(self.read(self.all_pieces))
         await self.feed_pieces()
-        pieces_list = await asyncio.wait_for(asyncio.gather(task1, task2), 5)
+        pieces_list = await asyncio.wait_for(asyncio.gather(task1, task2), 60)
         for pieces in pieces_list:
             self.assertEqual(pieces, self.torrent.pieces)
 
@@ -143,7 +143,7 @@ class TestReadPieces(request_test_utils.RequestServiceTestCase):
         # recheck the torrent
         self.handle.force_recheck()
 
-        pieces = await asyncio.wait_for(self.read(self.all_pieces), 5)
+        pieces = await asyncio.wait_for(self.read(self.all_pieces), 60)
         self.assertEqual(pieces, self.torrent.pieces)
 
     async def test_read_after_cancelled_read(self) -> None:
@@ -151,5 +151,5 @@ class TestReadPieces(request_test_utils.RequestServiceTestCase):
         it = self.service.read_pieces(self.handle, self.all_pieces)
         async for _ in it:
             break
-        pieces = await asyncio.wait_for(self.read(self.all_pieces), 5)
+        pieces = await asyncio.wait_for(self.read(self.all_pieces), 60)
         self.assertEqual(pieces, self.torrent.pieces)

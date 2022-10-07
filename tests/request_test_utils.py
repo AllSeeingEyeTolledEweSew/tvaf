@@ -49,16 +49,16 @@ class RequestServiceTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         self.service.close()
-        await asyncio.wait_for(self.service.wait_closed(), 5)
+        await asyncio.wait_for(self.service.wait_closed(), 60)
         self.alert_driver.close()
-        await asyncio.wait_for(self.alert_driver.wait_closed(), 5)
+        await asyncio.wait_for(self.alert_driver.wait_closed(), 60)
         await asyncio.to_thread(self.tempdir.cleanup)
 
     async def feed_pieces(self) -> None:
         piece_indexes = list(range(len(self.torrent.pieces)))
         # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
         # checking silently fails in libtorrent 1.2.8.
-        await asyncio.wait_for(lib.wait_done_checking_or_error(self.handle), 5)
+        await asyncio.wait_for(lib.wait_done_checking_or_error(self.handle), 60)
         if (await asyncio.to_thread(self.handle.status)).errc.value() != 0:
             return
         for i in piece_indexes:

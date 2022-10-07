@@ -66,7 +66,7 @@ def mocks(
     return Mocks(mock_mtla, mock_startup, mock_shutdown)
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_normal(mocks: Mocks) -> None:
     await mocks.mtla.startup()
     mocks.do_startup.assert_awaited_once()
@@ -74,14 +74,14 @@ async def test_normal(mocks: Mocks) -> None:
     mocks.do_shutdown.assert_awaited_once()
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_startup_error(mocks: Mocks) -> None:
     mocks.mtla.do_startup = raise_fake_error
     with pytest.raises(FakeError):
         await mocks.mtla.startup()
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_shutdown_error(mocks: Mocks) -> None:
     mocks.mtla.do_shutdown = raise_fake_error
     await mocks.mtla.startup()
@@ -90,7 +90,7 @@ async def test_shutdown_error(mocks: Mocks) -> None:
         await mocks.mtla.shutdown()
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_start_soon_in_startup(mocks: Mocks) -> None:
     task_future: asyncio.Future[asyncio.Task] = asyncio.get_event_loop().create_future()
 
@@ -110,7 +110,7 @@ async def test_start_soon_in_startup(mocks: Mocks) -> None:
     mocks.do_shutdown.assert_awaited_once()
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_start_soon_after_startup(mocks: Mocks) -> None:
     await mocks.mtla.startup()
     mocks.do_startup.assert_awaited_once()
@@ -130,7 +130,7 @@ async def test_start_soon_after_startup(mocks: Mocks) -> None:
     mocks.do_shutdown.assert_awaited_once()
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_error_in_subtask_fails_shutdown(mocks: Mocks) -> None:
     await mocks.mtla.startup()
     mocks.do_startup.assert_awaited_once()

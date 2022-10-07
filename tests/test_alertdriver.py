@@ -49,7 +49,7 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         self.driver.close()
-        await asyncio.wait_for(self.driver.wait_closed(), 5)
+        await asyncio.wait_for(self.driver.wait_closed(), 60)
         self.tempdir.cleanup()
 
     async def test_see_alert(self) -> None:
@@ -58,7 +58,7 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
         ) as iterator:
             self.session.async_add_torrent(self.atp)
 
-            alert = await asyncio.wait_for(iterator.__anext__(), 5)
+            alert = await asyncio.wait_for(iterator.__anext__(), 60)
             self.assertIsInstance(alert, lt.add_torrent_alert)
 
     async def test_filter_by_type(self) -> None:
@@ -69,12 +69,12 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
         ) as iterator:
             handle = self.session.add_torrent(self.atp)
             # should fire state_changed_alert, but we should *not* see it
-            await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 5)
+            await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 60)
             self.session.remove_torrent(handle)
 
-            alert = await asyncio.wait_for(iterator.__anext__(), 5)
+            alert = await asyncio.wait_for(iterator.__anext__(), 60)
             self.assertIsInstance(alert, lt.add_torrent_alert)
-            alert = await asyncio.wait_for(iterator.__anext__(), 5)
+            alert = await asyncio.wait_for(iterator.__anext__(), 60)
             self.assertIsInstance(alert, lt.torrent_removed_alert)
 
     async def test_unfiltered(self) -> None:
@@ -83,7 +83,7 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
         ) as iterator:
             self.session.add_torrent(self.atp)
 
-            alert = await asyncio.wait_for(iterator.__anext__(), 5)
+            alert = await asyncio.wait_for(iterator.__anext__(), 60)
             # The alert order changed subtly in
             # https://github.com/arvidn/libtorrent/pull/6897
             self.assertIsInstance(alert, (lt.add_torrent_alert, lt.torrent_added_alert))
@@ -106,7 +106,7 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
             self.session.remove_torrent(other_handle)
             self.session.remove_torrent(handle)
 
-            alert = await asyncio.wait_for(iterator.__anext__(), 5)
+            alert = await asyncio.wait_for(iterator.__anext__(), 60)
             assert isinstance(alert, lt.torrent_removed_alert)
             self.assertEqual(alert.handle, handle)
 
@@ -159,5 +159,5 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
                     pass
 
         task = asyncio.create_task(iter_task())
-        await asyncio.wait_for(checkpoint.wait(), 5)
+        await asyncio.wait_for(checkpoint.wait(), 60)
         task.cancel()

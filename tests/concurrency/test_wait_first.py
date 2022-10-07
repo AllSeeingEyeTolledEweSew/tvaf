@@ -23,7 +23,7 @@ class DummyException(Exception):
     pass
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_first_completed() -> None:
     async def noop() -> None:
         pass
@@ -34,7 +34,7 @@ async def test_first_completed() -> None:
     assert forever.cancelled()
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_exception() -> None:
     async def raise_dummy() -> None:
         raise DummyException()

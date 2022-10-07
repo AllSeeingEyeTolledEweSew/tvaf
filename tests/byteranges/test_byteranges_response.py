@@ -38,7 +38,7 @@ async def test_single_with_body() -> None:
     app = byteranges.ByteRangesResponse(
         [slice(100, 200)], content=content, media_type="test/test"
     )
-    async with httpx.AsyncClient(app=app, base_url="http://test", timeout=5) as client:
+    async with httpx.AsyncClient(app=app, base_url="http://test", timeout=60) as client:
         resp = await client.get("http://test")
 
     assert resp.status_code == 206
@@ -55,7 +55,7 @@ async def test_multi_with_body() -> None:
         content=content,
         media_type="application/octet-stream",
     )
-    async with httpx.AsyncClient(app=app, base_url="http://test", timeout=5) as client:
+    async with httpx.AsyncClient(app=app, base_url="http://test", timeout=60) as client:
         resp = await client.get("http://test")
 
     assert resp.status_code == 206

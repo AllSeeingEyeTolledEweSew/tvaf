@@ -25,15 +25,15 @@ class GetTest(lib.AppTest, lib.TestCase):
     async def test_get(self) -> None:
         r = await self.client.get("/config")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json(), await asyncio.wait_for(services.get_config(), 5))
+        self.assertEqual(r.json(), await asyncio.wait_for(services.get_config(), 60))
 
 
 class PostTest(lib.AppTest, lib.TestCase):
     async def test_get(self) -> None:
-        config = config_lib.Config(await asyncio.wait_for(services.get_config(), 5))
+        config = config_lib.Config(await asyncio.wait_for(services.get_config(), 60))
         config["test"] = "test"
         r = await self.client.post("/config", json=config)
         self.assertEqual(r.status_code, 200)
         self.assertEqual(
-            (await asyncio.wait_for(services.get_config(), 5))["test"], "test"
+            (await asyncio.wait_for(services.get_config(), 60))["test"], "test"
         )

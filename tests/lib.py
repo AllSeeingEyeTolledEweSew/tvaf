@@ -164,25 +164,25 @@ class AppTest(unittest.IsolatedAsyncioTestCase):
         self.lifespan_manager = asgi_lifespan.LifespanManager(
             app_lib.APP, startup_timeout=None, shutdown_timeout=None
         )
-        with anyio.fail_after(5):
+        with anyio.fail_after(60):
             await self.lifespan_manager.__aenter__()
 
         # https://github.com/encode/httpx/issues/2239: httpx doesn't honor timeouts for
         # ASGI/WSGI
 
         async def app_with_timeout(*args) -> None:
-            with anyio.fail_after(5):
+            with anyio.fail_after(60):
                 await app_lib.APP(*args)
 
         self.client = httpx.AsyncClient(
             app=app_with_timeout,
             base_url="http://test",
             follow_redirects=True,
-            timeout=5,
+            timeout=60,
         )
 
     async def asyncTearDown(self) -> None:
-        with anyio.fail_after(5):
+        with anyio.fail_after(60):
             await self.client.aclose()
             await self.lifespan_manager.__aexit__(None, None, None)
         await asyncio.to_thread(os.chdir, self.cwd)
@@ -196,7 +196,7 @@ class AppTestWithTorrent(AppTest):
 
         atp = self.torrent.atp()
         atp.save_path = self.tempdir.name
-        with anyio.fail_after(5):
+        with anyio.fail_after(60):
             session = await services.get_session()
             self.handle = await asyncio.to_thread(
                 session.add_torrent, atp  # type: ignore

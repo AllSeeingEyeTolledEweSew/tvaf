@@ -50,7 +50,7 @@ def pool(conn_factory: Callable[[], apsw.Connection]) -> dbver.Pool[apsw.Connect
 @pytest.fixture
 def conn(pool: dbver.Pool[apsw.Connection]) -> Iterator[apsw.Connection]:
     with pool() as local_conn:
-        local_conn.setbusytimeout(5000)
+        local_conn.setbusytimeout(60000)
         yield local_conn
 
 
@@ -104,7 +104,7 @@ def get_atps(
 
 
 # TODO: parametrize concurrency somehow?
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_write(
     task: asyncio.Task,
     queue: resumedb.Queue,
@@ -125,7 +125,7 @@ async def test_write(
     await task
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_add_jobs_after_cancel(
     task: asyncio.Task,
     queue: resumedb.Queue,
@@ -139,7 +139,7 @@ async def test_add_jobs_after_cancel(
     assert got_atps == []
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_batch(
     task: asyncio.Task,
     queue: resumedb.Queue,
@@ -158,7 +158,7 @@ async def test_batch(
     assert got_hashes == expected_hashes
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_busyerror(
     task: asyncio.Task,
     cov: resumedb.WriteCoverage,

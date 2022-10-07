@@ -71,7 +71,7 @@ async def iter_alerts(
     await alert_driver.wait_closed()
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_set_before_start(
     iter_alerts: driver_lib.IterAlerts, handle: lt.torrent_handle, ti: lt.torrent_info
 ) -> None:
@@ -82,7 +82,7 @@ async def test_set_before_start(
     assert got_ti.info_section() == ti.info_section()
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_set_after_start(
     iter_alerts: driver_lib.IterAlerts, handle: lt.torrent_handle, ti: lt.torrent_info
 ) -> None:
@@ -106,7 +106,7 @@ async def test_set_after_start(
     assert got_ti.info_section() == ti.info_section()
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_remove_before_start(
     iter_alerts: driver_lib.IterAlerts, handle: lt.torrent_handle, session: lt.session
 ) -> None:
@@ -117,7 +117,7 @@ async def test_remove_before_start(
         await services_util.get_torrent_info(handle=handle, iter_alerts=iter_alerts)
 
 
-@conftest.timeout(5)
+@conftest.timeout(60)
 async def test_remove_after_start(
     iter_alerts: driver_lib.IterAlerts, handle: lt.torrent_handle, session: lt.session
 ) -> None:
