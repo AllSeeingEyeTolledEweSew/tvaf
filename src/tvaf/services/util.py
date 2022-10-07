@@ -36,7 +36,7 @@ async def get_torrent_info(
         with ltpy.translate_exceptions():
             return await asyncio.to_thread(handle.torrent_file)
 
-    with iter_alerts(
+    async with iter_alerts(
         lt.alert_category.status,
         lt.metadata_received_alert,
         lt.torrent_removed_alert,

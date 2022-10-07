@@ -53,7 +53,7 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
         self.tempdir.cleanup()
 
     async def test_see_alert(self) -> None:
-        with self.iter_alerts(
+        async with self.iter_alerts(
             lt.alert_category.status, lt.add_torrent_alert
         ) as iterator:
             self.session.async_add_torrent(self.atp)
@@ -62,7 +62,7 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsInstance(alert, lt.add_torrent_alert)
 
     async def test_filter_by_type(self) -> None:
-        with self.iter_alerts(
+        async with self.iter_alerts(
             lt.alert_category.status,
             lt.add_torrent_alert,
             lt.torrent_removed_alert,
@@ -78,7 +78,7 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
             self.assertIsInstance(alert, lt.torrent_removed_alert)
 
     async def test_unfiltered(self) -> None:
-        with self.iter_alerts(
+        async with self.iter_alerts(
             lt.alert_category.status,
         ) as iterator:
             self.session.add_torrent(self.atp)
@@ -97,7 +97,7 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
         handle = self.session.add_torrent(self.atp)
         other_handle = self.session.add_torrent(other_atp)
 
-        with self.iter_alerts(
+        async with self.iter_alerts(
             lt.alert_category.status,
             lt.torrent_removed_alert,
             handle=handle,
@@ -114,7 +114,7 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
         handle = self.session.add_torrent(self.atp)
         self.session.remove_torrent(handle)
         with self.assertRaises(ltpy.InvalidTorrentHandleError):
-            with self.iter_alerts(lt.alert_category.status, handle=handle) as it:
+            async with self.iter_alerts(lt.alert_category.status, handle=handle) as it:
                 async for alert in it:
                     pass
 
@@ -125,13 +125,13 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertFalse(alerts_enabled())
-        with self.iter_alerts(lt.alert_category.status) as _:
+        async with self.iter_alerts(lt.alert_category.status) as _:
             self.assertTrue(alerts_enabled())
         self.assertFalse(alerts_enabled())
 
     async def test_exception(self) -> None:
         with self.assertRaises(DummyException):
-            with self.iter_alerts(lt.alert_category.status) as _:
+            async with self.iter_alerts(lt.alert_category.status) as _:
                 raise DummyException()
 
     async def test_alert_mask_with_exception(self) -> None:
@@ -142,7 +142,7 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(alerts_enabled())
         try:
-            with self.iter_alerts(lt.alert_category.status) as _:
+            async with self.iter_alerts(lt.alert_category.status) as _:
                 self.assertTrue(alerts_enabled())
                 raise DummyException()
         except DummyException:
@@ -153,7 +153,7 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
         checkpoint = asyncio.Event()
 
         async def iter_task() -> None:
-            with self.iter_alerts(lt.alert_category.status) as iterator:
+            async with self.iter_alerts(lt.alert_category.status) as iterator:
                 checkpoint.set()
                 async for _ in iterator:
                     pass

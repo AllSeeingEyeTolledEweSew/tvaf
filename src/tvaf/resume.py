@@ -74,7 +74,7 @@ class ResumeService:
             self._session.async_add_torrent(atp)
 
     async def _handle_alerts(self) -> None:
-        with self._alert_driver.iter_alerts(
+        async with self._alert_driver.iter_alerts(
             lt.alert_category.status | lt.alert_category.storage,
             lt.save_resume_data_alert,
             lt.add_torrent_alert,

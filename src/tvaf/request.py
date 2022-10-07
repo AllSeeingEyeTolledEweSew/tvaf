@@ -272,7 +272,7 @@ class RequestService:
             await self._task
 
     async def _run(self) -> None:
-        with self._alert_driver.iter_alerts(
+        async with self._alert_driver.iter_alerts(
             lt.alert_category.status,
             lt.read_piece_alert,
             lt.torrent_removed_alert,

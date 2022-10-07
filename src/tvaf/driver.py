@@ -14,14 +14,14 @@ from __future__ import annotations
 
 import asyncio
 import collections
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
 from collections.abc import Collection
 from collections.abc import Iterable
 from collections.abc import Iterator
 import contextlib
 import logging
 from typing import Any
-from typing import ContextManager
+from typing import AsyncContextManager
 from typing import Optional
 from typing import Protocol
 import warnings
@@ -131,13 +131,17 @@ class _Iterator:
             task_group.cancel_scope.cancel()
             return alerts
 
-    async def iterator(self) -> AsyncGenerator[lt.alert, None]:
+    async def _iter_alerts(self) -> AsyncIterator[lt.alert]:
+        while True:
+            for alert in await self._wait_for_alerts_or_exception():
+                yield alert
+            self.maybe_release()
+
+    @contextlib.asynccontextmanager
+    async def get_iterator(self) -> AsyncIterator[AsyncIterator[lt.alert]]:
         async with anyio.create_task_group() as task_group:
             task_group.start_soon(self._set_exception_if_removed)
-            while True:
-                for alert in await self._wait_for_alerts_or_exception():
-                    yield alert
-                self.maybe_release()
+            yield self._iter_alerts()
 
 
 class IterAlerts(Protocol):
@@ -147,7 +151,7 @@ class IterAlerts(Protocol):
         *types: _Type,
         handle: lt.torrent_handle = None,
         raise_if_removed=True,
-    ) -> ContextManager[AsyncGenerator[lt.alert, None]]:
+    ) -> AsyncContextManager[AsyncIterator[lt.alert]]:
         ...
 
 
@@ -213,14 +217,14 @@ class AlertDriver:
     # 2. We provide a callback to be called once the iterator has been
     #    subscribed (from the first __anext__()). This makes common usage
     #    awkward.
-    @contextlib.contextmanager
-    def iter_alerts(
+    @contextlib.asynccontextmanager
+    async def iter_alerts(
         self,
         alert_mask: int,
         *types: _Type,
         handle: lt.torrent_handle = None,
         raise_if_removed=True,
-    ) -> Iterator[AsyncGenerator[lt.alert, None]]:
+    ) -> AsyncIterator[AsyncIterator[lt.alert]]:
         it = _Iterator(
             refcount=self._refcount,
             types=types,
@@ -231,7 +235,8 @@ class AlertDriver:
         with self._session_service.alert_mask(alert_mask):
             try:
                 self._index(it)
-                yield it.iterator()
+                async with it.get_iterator() as real_iterator:
+                    yield real_iterator
             finally:
                 it.maybe_release()
                 self._deindex(it)
