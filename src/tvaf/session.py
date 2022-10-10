@@ -19,6 +19,8 @@ from collections.abc import Iterator
 import contextlib
 import logging
 from typing import Any
+from typing import ContextManager
+from typing import Protocol
 
 import libtorrent as lt
 
@@ -113,6 +115,11 @@ _init_alert_mask_name()
 del _init_alert_mask_name
 
 
+class UseAlertMask(Protocol):
+    def __call__(self, alert_mask: int) -> ContextManager:
+        ...
+
+
 class SessionService:
     def __init__(self, *, alert_mask: int = 0, config: config_lib.Config = None):
         self._alert_mask_bit_count: dict[int, int] = {}
@@ -139,7 +146,7 @@ class SessionService:
                 self._alert_mask_bit_count.pop(bit)
 
     @contextlib.contextmanager
-    def alert_mask(self, alert_mask: int) -> Iterator:
+    def use_alert_mask(self, alert_mask: int) -> Iterator:
         try:
             self._inc_alert_mask_bits(alert_mask)
             # Can't fail to update alert mask (?)

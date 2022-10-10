@@ -37,9 +37,11 @@ class DummyException(Exception):
 
 class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        self.session_service = lib.create_isolated_session_service()
-        self.session = self.session_service.session
-        self.driver = driver_lib.AlertDriver(session_service=self.session_service)
+        session_service = lib.create_isolated_session_service()
+        self.session = session_service.session
+        self.driver = driver_lib.AlertDriver(
+            session=self.session, use_alert_mask=session_service.use_alert_mask
+        )
         self.iter_alerts: driver_lib.IterAlerts = self.driver.iter_alerts
         self.task = asyncio.create_task(self.driver.run())
         self.tempdir = tempfile.TemporaryDirectory()

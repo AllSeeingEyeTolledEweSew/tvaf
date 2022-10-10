@@ -51,6 +51,13 @@ def session_service(config: config_lib.Config) -> session_lib.SessionService:
 
 
 @pytest.fixture
+def use_alert_mask(
+    session_service: session_lib.SessionService,
+) -> session_lib.UseAlertMask:
+    return session_service.use_alert_mask
+
+
+@pytest.fixture
 def session(session_service: session_lib.SessionService) -> lt.session:
     return session_service.session
 
@@ -62,9 +69,12 @@ def handle(atp: lt.add_torrent_params, session: lt.session) -> lt.torrent_handle
 
 @pytest.fixture
 async def iter_alerts(
-    session_service: session_lib.SessionService,
+    use_alert_mask: session_lib.UseAlertMask,
+    session: lt.session,
 ) -> AsyncIterator[driver_lib.IterAlerts]:
-    alert_driver = driver_lib.AlertDriver(session_service=session_service)
+    alert_driver = driver_lib.AlertDriver(
+        use_alert_mask=use_alert_mask, session=session
+    )
     task = asyncio.create_task(alert_driver.run())
     yield alert_driver.iter_alerts
     alert_driver.shutdown()

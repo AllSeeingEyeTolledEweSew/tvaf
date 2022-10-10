@@ -58,12 +58,14 @@ def atp_comparable(atp: lt.add_torrent_params) -> dict[bytes, Any]:
 
 class TerminateTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        self.session_service = lib.create_isolated_session_service()
-        self.session = self.session_service.session
+        session_service = lib.create_isolated_session_service()
+        self.session = session_service.session
         self.torrent = tdummy.DEFAULT
         self.tempdir = tempfile.TemporaryDirectory()
         self.path = pathlib.Path(self.tempdir.name)
-        self.alert_driver = driver_lib.AlertDriver(session_service=self.session_service)
+        self.alert_driver = driver_lib.AlertDriver(
+            session=self.session, use_alert_mask=session_service.use_alert_mask
+        )
         self.resume = resume_lib.ResumeService(
             session=self.session,
             alert_driver=self.alert_driver,

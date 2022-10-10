@@ -147,7 +147,10 @@ async def get_session() -> lt.session:
 
 @caches.asingleton()
 async def get_alert_driver() -> driver_lib.AlertDriver:
-    return driver_lib.AlertDriver(session_service=await get_session_service())
+    return driver_lib.AlertDriver(
+        session=await get_session(),
+        use_alert_mask=(await get_session_service()).use_alert_mask,
+    )
 
 
 def _resume_db_factory() -> apsw.Connection:

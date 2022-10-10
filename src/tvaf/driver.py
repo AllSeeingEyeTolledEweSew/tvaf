@@ -131,9 +131,11 @@ class AlertDriver:
 
     TIMEOUT = 10.0
 
-    def __init__(self, *, session_service: session_lib.SessionService) -> None:
-        self._session_service = session_service
-        self._session = session_service.session
+    def __init__(
+        self, *, session: lt.session, use_alert_mask: session_lib.UseAlertMask
+    ) -> None:
+        self._use_alert_mask = use_alert_mask
+        self._session = session
         self._shutdown = asyncio.get_event_loop().create_future()
 
         # A shared counter of how many subscriptions' iterators *may* be referencing
@@ -196,7 +198,7 @@ class AlertDriver:
         try:
             async with contextlib.AsyncExitStack() as stack:
                 stack.enter_context(self._index(sub))
-                stack.enter_context(self._session_service.alert_mask(alert_mask))
+                stack.enter_context(self._use_alert_mask(alert_mask))
                 watchdog_task_group = await stack.enter_async_context(
                     anyio.create_task_group()
                 )

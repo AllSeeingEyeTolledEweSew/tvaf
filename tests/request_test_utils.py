@@ -31,9 +31,11 @@ class RequestServiceTestCase(unittest.IsolatedAsyncioTestCase):
         self.torrent = tdummy.DEFAULT
         self.tempdir = await asyncio.to_thread(tempfile.TemporaryDirectory)
 
-        self.session_service = lib.create_isolated_session_service()
-        self.session = self.session_service.session
-        self.alert_driver = driver_lib.AlertDriver(session_service=self.session_service)
+        session_service = lib.create_isolated_session_service()
+        self.session = session_service.session
+        self.alert_driver = driver_lib.AlertDriver(
+            session=self.session, use_alert_mask=session_service.use_alert_mask
+        )
         self.service = request_lib.RequestService(
             alert_driver=self.alert_driver,
             session=self.session,

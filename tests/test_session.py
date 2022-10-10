@@ -57,7 +57,7 @@ class TestSession(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(settings["alert_mask"], 1 | 2)
 
         # Test we can add a runtime mask
-        with session_service.alert_mask(1 | 8):
+        with session_service.use_alert_mask(1 | 8):
             settings = session_service.session.get_settings()
             self.assertEqual(settings["alert_mask"], 1 | 2 | 8)
 
