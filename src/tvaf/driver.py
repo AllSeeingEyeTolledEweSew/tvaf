@@ -17,6 +17,7 @@ import collections
 from collections.abc import AsyncIterator
 from collections.abc import Collection
 from collections.abc import Iterable
+from collections.abc import Iterator
 from collections.abc import Sequence
 import contextlib
 import logging
@@ -149,21 +150,22 @@ class AlertDriver:
             dict[Optional[lt.torrent_handle], set[_Subscription]],
         ] = collections.defaultdict(lambda: collections.defaultdict(set))
 
-    def _index(self, sub: _Subscription) -> None:
-        types: Iterable[Optional[_Type]] = sub.types
-        for type_ in types or {None}:
-            self._type_to_handle_to_subs[type_][sub.handle].add(sub)
-
-    def _deindex(self, sub: _Subscription) -> None:
-        types: Iterable[Optional[_Type]] = sub.types
-        for type_ in types or {None}:
-            handle_to_subs = self._type_to_handle_to_subs[type_]
-            subs = handle_to_subs[sub.handle]
-            subs.discard(sub)
-            if not subs:
-                del handle_to_subs[sub.handle]
-                if not handle_to_subs:
-                    del self._type_to_handle_to_subs[type_]
+    @contextlib.contextmanager
+    def _index(self, sub: _Subscription) -> Iterator:
+        try:
+            types: Iterable[Optional[_Type]] = sub.types
+            for type_ in types or {None}:
+                self._type_to_handle_to_subs[type_][sub.handle].add(sub)
+            yield
+        finally:
+            for type_ in types or {None}:
+                handle_to_subs = self._type_to_handle_to_subs[type_]
+                subs = handle_to_subs[sub.handle]
+                subs.discard(sub)
+                if not subs:
+                    del handle_to_subs[sub.handle]
+                    if not handle_to_subs:
+                        del self._type_to_handle_to_subs[type_]
 
     async def _do_raise_if_removed(self, handle: lt.torrent_handle) -> None:
         if not await asyncio.to_thread(ltpy.handle_in_session, handle, self._session):
@@ -199,8 +201,8 @@ class AlertDriver:
     ) -> AsyncIterator[AsyncIterator[lt.alert]]:
         sub = _Subscription(refcount=self._refcount, types=types, handle=handle)
         try:
-            self._index(sub)
             async with contextlib.AsyncExitStack() as stack:
+                stack.enter_context(self._index(sub))
                 stack.enter_context(self._session_service.alert_mask(alert_mask))
                 if raise_if_removed and handle is not None:
                     check_task_group = await stack.enter_async_context(
@@ -214,7 +216,6 @@ class AlertDriver:
                 yield sub.iterator()
                 watchdog_task_group.cancel_scope.cancel()
         finally:
-            self._deindex(sub)
             sub.maybe_release()
 
     def feed(self, alerts: Sequence[lt.alert]) -> None:
