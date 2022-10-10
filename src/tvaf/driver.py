@@ -33,7 +33,6 @@ import libtorrent as lt
 from tvaf._internal import pop_alerts as pop_alerts_lib
 
 from . import concurrency
-from . import ltpy
 from . import session as session_lib
 
 _LOG = logging.getLogger(__name__)
@@ -124,7 +123,6 @@ class IterAlerts(Protocol):
         alert_mask: int,
         *types: _Type,
         handle: lt.torrent_handle = None,
-        raise_if_removed=True,
     ) -> AsyncContextManager[AsyncIterator[lt.alert]]:
         ...
 
@@ -167,10 +165,6 @@ class AlertDriver:
                     if not handle_to_subs:
                         del self._type_to_handle_to_subs[type_]
 
-    async def _do_raise_if_removed(self, handle: lt.torrent_handle) -> None:
-        if not await asyncio.to_thread(ltpy.handle_in_session, handle, self._session):
-            raise ltpy.InvalidTorrentHandleError.create()
-
     async def _do_raise_on_shutdown(self) -> None:
         await asyncio.shield(self._shutdown)
         raise ShutdownError()
@@ -197,18 +191,12 @@ class AlertDriver:
         alert_mask: int,
         *types: _Type,
         handle: lt.torrent_handle = None,
-        raise_if_removed=True,
     ) -> AsyncIterator[AsyncIterator[lt.alert]]:
         sub = _Subscription(refcount=self._refcount, types=types, handle=handle)
         try:
             async with contextlib.AsyncExitStack() as stack:
                 stack.enter_context(self._index(sub))
                 stack.enter_context(self._session_service.alert_mask(alert_mask))
-                if raise_if_removed and handle is not None:
-                    check_task_group = await stack.enter_async_context(
-                        anyio.create_task_group()
-                    )
-                    check_task_group.start_soon(self._do_raise_if_removed, handle)
                 watchdog_task_group = await stack.enter_async_context(
                     anyio.create_task_group()
                 )

@@ -21,7 +21,6 @@ import anyio
 import libtorrent as lt
 
 from tvaf import driver as driver_lib
-from tvaf import ltpy
 
 from . import lib
 from . import tdummy
@@ -103,7 +102,6 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
             lt.alert_category.status,
             lt.torrent_removed_alert,
             handle=handle,
-            raise_if_removed=False,
         ) as iterator:
             self.session.remove_torrent(other_handle)
             self.session.remove_torrent(handle)
@@ -111,14 +109,6 @@ class IterAlertsTest(unittest.IsolatedAsyncioTestCase):
             alert = await asyncio.wait_for(iterator.__anext__(), 60)
             assert isinstance(alert, lt.torrent_removed_alert)
             self.assertEqual(alert.handle, handle)
-
-    async def test_filter_by_removed_handle(self) -> None:
-        handle = self.session.add_torrent(self.atp)
-        self.session.remove_torrent(handle)
-        with self.assertRaises(ltpy.InvalidTorrentHandleError):
-            async with self.iter_alerts(lt.alert_category.status, handle=handle) as it:
-                async for alert in it:
-                    pass
 
     async def test_alert_mask(self) -> None:
         def alerts_enabled() -> bool:
