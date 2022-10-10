@@ -76,7 +76,7 @@ def log_alert(
 _Type = type[lt.alert]
 
 
-class _Iterator:
+class _Subscription:
     def __init__(
         self,
         *,
@@ -137,33 +137,33 @@ class AlertDriver:
         self._session = session_service.session
         self._shutdown = asyncio.get_event_loop().create_future()
 
-        # A shared counter of how many iterators *may* be referencing the
-        # current batch of alerts
+        # A shared counter of how many subscriptions' iterators *may* be referencing
+        # the current batch of alerts
         self._refcount = concurrency.RefCount()
 
-        # Iterators indexed by their filter parameters. If type or handle is
-        # None, it indicates the type/handle is not filtered, and those
-        # iterators should receive all alerts
-        self._type_to_handle_to_iters: dict[
+        # Subscriptions indexed by their filter parameters. If type or handle is None,
+        # it indicates the type/handle is not filtered, and those subscriptions should
+        # receive all alerts
+        self._type_to_handle_to_subs: dict[
             Optional[_Type],
-            dict[Optional[lt.torrent_handle], set[_Iterator]],
+            dict[Optional[lt.torrent_handle], set[_Subscription]],
         ] = collections.defaultdict(lambda: collections.defaultdict(set))
 
-    def _index(self, it: _Iterator) -> None:
-        types: Iterable[Optional[_Type]] = it.types
+    def _index(self, sub: _Subscription) -> None:
+        types: Iterable[Optional[_Type]] = sub.types
         for type_ in types or {None}:
-            self._type_to_handle_to_iters[type_][it.handle].add(it)
+            self._type_to_handle_to_subs[type_][sub.handle].add(sub)
 
-    def _deindex(self, it: _Iterator) -> None:
-        types: Iterable[Optional[_Type]] = it.types
+    def _deindex(self, sub: _Subscription) -> None:
+        types: Iterable[Optional[_Type]] = sub.types
         for type_ in types or {None}:
-            handle_to_iters = self._type_to_handle_to_iters[type_]
-            iters = handle_to_iters[it.handle]
-            iters.discard(it)
-            if not iters:
-                del handle_to_iters[it.handle]
-                if not handle_to_iters:
-                    del self._type_to_handle_to_iters[type_]
+            handle_to_subs = self._type_to_handle_to_subs[type_]
+            subs = handle_to_subs[sub.handle]
+            subs.discard(sub)
+            if not subs:
+                del handle_to_subs[sub.handle]
+                if not handle_to_subs:
+                    del self._type_to_handle_to_subs[type_]
 
     async def _do_raise_if_removed(self, handle: lt.torrent_handle) -> None:
         if not await asyncio.to_thread(ltpy.handle_in_session, handle, self._session):
@@ -197,9 +197,9 @@ class AlertDriver:
         handle: lt.torrent_handle = None,
         raise_if_removed=True,
     ) -> AsyncIterator[AsyncIterator[lt.alert]]:
-        it = _Iterator(refcount=self._refcount, types=types, handle=handle)
+        sub = _Subscription(refcount=self._refcount, types=types, handle=handle)
         try:
-            self._index(it)
+            self._index(sub)
             async with contextlib.AsyncExitStack() as stack:
                 stack.enter_context(self._session_service.alert_mask(alert_mask))
                 if raise_if_removed and handle is not None:
@@ -211,18 +211,20 @@ class AlertDriver:
                     anyio.create_task_group()
                 )
                 watchdog_task_group.start_soon(self._do_raise_on_shutdown)
-                yield it.iterator()
+                yield sub.iterator()
                 watchdog_task_group.cancel_scope.cancel()
         finally:
-            self._deindex(it)
-            it.maybe_release()
+            self._deindex(sub)
+            sub.maybe_release()
 
     def feed(self, alerts: Sequence[lt.alert]) -> None:
         for alert in alerts:
             log_alert(alert)
 
-        # Feed alerts to their iterators
-        iter_alerts: dict[_Iterator, list[lt.alert]] = collections.defaultdict(list)
+        # Feed alerts to their subscriptions
+        sub_to_alerts: dict[_Subscription, list[lt.alert]] = collections.defaultdict(
+            list
+        )
         for alert in alerts:
             lookup_types = (alert.__class__, None)
             lookup_handles: Collection[Optional[lt.torrent_handle]]
@@ -231,14 +233,14 @@ class AlertDriver:
             else:
                 lookup_handles = (None,)
             for type_ in lookup_types:
-                handle_to_iters = self._type_to_handle_to_iters.get(type_, {})
+                handle_to_subs = self._type_to_handle_to_subs.get(type_, {})
                 for handle in lookup_handles:
-                    iters = handle_to_iters.get(handle, ())
-                    for it in iters:
-                        iter_alerts[it].append(alert)
+                    subs = handle_to_subs.get(handle, ())
+                    for sub in subs:
+                        sub_to_alerts[sub].append(alert)
 
-        for it, alerts in iter_alerts.items():
-            it.feed(alerts)
+        for sub, alerts in sub_to_alerts.items():
+            sub.feed(alerts)
 
     async def wait_safe(self) -> None:
         while True:
