@@ -44,14 +44,11 @@ async def get_torrent_info(
     ) as iterator:
         async with anyio.create_task_group() as task_group:
 
-            async def wait_for_metadata() -> None:
+            async def handle_alerts() -> None:
                 async for alert in iterator:
-                    if isinstance(alert, lt.metadata_received_alert):
-                        break
-                    elif isinstance(alert, lt.torrent_removed_alert):
-                        raise ltpy.InvalidTorrentHandleError.create()
+                    task_group.cancel_scope.cancel()
 
-            task_group.start_soon(wait_for_metadata)
+            task_group.start_soon(handle_alerts)
 
             # Check torrent_file() only after the iterator is created, to
             # ensure we see metadata_received_alert
