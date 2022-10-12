@@ -13,6 +13,8 @@
 from __future__ import annotations
 
 import asyncio
+import collections
+from collections.abc import AsyncIterator
 from collections.abc import Iterator
 import contextlib
 import functools
@@ -20,9 +22,11 @@ import logging
 import math
 from typing import Any
 from typing import Callable
+from typing import cast
 from typing import Optional
-import warnings
 
+import anyio
+import anyio.abc
 import apsw
 import dbver
 import libtorrent as lt
@@ -41,27 +45,31 @@ __all__ = ["ResumeService", "get_version", "upgrade", "iter_resume_data_from_db"
 _LOG = logging.getLogger(__name__)
 
 
+@contextlib.contextmanager
+def _translate_and_ignore_removed() -> Iterator:
+    with contextlib.suppress(ltpy.InvalidTorrentHandleError):
+        with ltpy.translate_exceptions():
+            yield
+
+
 class ResumeService:
     """ResumeService owns resume data management."""
 
     SAVE_ALL_INTERVAL = math.tan(1.5657)  # ~196
-    TIMEOUT = 10
 
     def __init__(
         self,
         *,
         session: lt.session,
-        alert_driver: driver_lib.AlertDriver,
+        iter_alerts: driver_lib.IterAlerts,
         pool: dbver.Pool[apsw.Connection],
     ):
         self._session = session
+        self._iter_alerts = iter_alerts
         self._pool = pool
-        self._queue: resumedb.Queue = asyncio.Queue()
-        self._alert_driver = alert_driver
-        self._got_alert = asyncio.Event()
 
-        self._closed = concurrency.create_future()
-        self._task: Optional[asyncio.Task] = None
+        self._queue: resumedb.Queue = asyncio.Queue()
+        self._got_alert = asyncio.Event()
 
     async def load(self) -> None:
         def iter_atps() -> Iterator[lt.add_torrent_params]:
@@ -72,25 +80,23 @@ class ResumeService:
             # Does not block
             self._session.async_add_torrent(atp)
 
-    async def _handle_alerts(self) -> None:
-        async with self._alert_driver.iter_alerts(
-            lt.alert_category.status | lt.alert_category.storage,
+    async def _handle_status_changes(
+        self, background_tasks: anyio.abc.TaskGroup
+    ) -> None:
+        async with self._iter_alerts(
+            lt.alert_category.status,
             lt.save_resume_data_alert,
             lt.add_torrent_alert,
             lt.torrent_removed_alert,
             lt.metadata_received_alert,
-            lt.file_renamed_alert,
-            lt.storage_moved_alert,
-            lt.cache_flushed_alert,
-            lt.torrent_paused_alert,
-            lt.torrent_finished_alert,
         ) as iterator:
             async for alert in iterator:
-                with contextlib.suppress(ltpy.InvalidTorrentHandleError):
-                    self._handle_alert(alert)
+                self._got_alert.set()
+                self._handle_status_alert(alert, background_tasks)
 
-    def _handle_alert(self, alert: lt.alert) -> None:
-        self._got_alert.set()
+    def _handle_status_alert(
+        self, alert: lt.alert, background_tasks: anyio.abc.TaskGroup
+    ) -> None:
         # NB: torrent_removed_alert may be followed by other alerts for the
         # same handle, and the handle may still be valid. We must avoid writing
         # data for deleted torrents, but we don't persist per-handle state to
@@ -120,26 +126,12 @@ class ResumeService:
         elif isinstance(alert, lt.torrent_removed_alert):
             self._add(resumedb.delete, alert.info_hashes)
         elif isinstance(alert, lt.metadata_received_alert):
-            self._metadata_received(alert.handle)
-        elif isinstance(
-            alert,
-            (
-                lt.cache_flushed_alert,
-                lt.torrent_paused_alert,
-                lt.torrent_finished_alert,
-                lt.file_renamed_alert,
-                lt.storage_moved_alert,
-            ),
-        ):
-            with contextlib.suppress(ltpy.InvalidTorrentHandleError):
-                with ltpy.translate_exceptions():
-                    # Does not block
-                    alert.handle.save_resume_data(
-                        flags=lt.save_resume_flags_t.only_if_modified
-                    )
+            self._metadata_received(alert.handle, background_tasks)
 
-    def _metadata_received(self, handle: lt.torrent_handle) -> None:
-        async def maybe_update_info_hashes_and_info() -> resumedb.Job:
+    def _metadata_received(
+        self, handle: lt.torrent_handle, background_tasks: anyio.abc.TaskGroup
+    ) -> None:
+        async def get_ti() -> Optional[lt.torrent_info]:
             # As of 2.0.6, metadata_received_alert may still be posted after
             # torrent_removed_alert. This creates pathological cases like this:
             # - add a hybrid torrent without metadata
@@ -152,94 +144,88 @@ class ResumeService:
             if not await asyncio.to_thread(
                 ltpy.handle_in_session, handle, self._session
             ):
-                return lambda conn: None
+                return None
             try:
                 with ltpy.translate_exceptions():
                     # DOES block
                     ti = await asyncio.to_thread(handle.torrent_file)
             except ltpy.InvalidTorrentHandleError:
-                return lambda conn: None
+                return None
             # metadata_received_alert is only emitted when we have the complete info
             # section, including all piece layers for a v2 torrent, so torrent_file()
             # should always be non-null
             assert ti is not None
-            return functools.partial(resumedb.update_info_hashes_and_info, ti)
+            return ti
 
-        self._queue.put_nowait(asyncio.create_task(maybe_update_info_hashes_and_info()))
+        async def resolve(job: asyncio.Future[resumedb.Job]) -> None:
+            ti = await get_ti()
+            if ti is not None:
+                job.set_result(
+                    functools.partial(resumedb.update_info_hashes_and_info, ti)
+                )
+            else:
+                job.set_result(lambda conn: None)
+
+        job: asyncio.Future[resumedb.Job] = asyncio.get_event_loop().create_future()
+        background_tasks.start_soon(resolve, job)
+        self._queue.put_nowait(job)
 
     def _add(self, func: Callable[..., None], *args: Any) -> None:
         job = functools.partial(func, *args)
         self._queue.put_nowait(concurrency.create_future(job))
+
+    async def _handle_save_triggers(self) -> None:
+        async with self._iter_alerts(
+            lt.alert_category.status | lt.alert_category.storage,
+            lt.cache_flushed_alert,
+            lt.torrent_paused_alert,
+            lt.torrent_resumed_alert,
+            lt.torrent_finished_alert,
+            lt.file_renamed_alert,
+            lt.storage_moved_alert,
+        ) as iterator:
+            async for alert in iterator:
+                self._got_alert.set()
+                handle = cast(lt.torrent_alert, alert).handle
+                with _translate_and_ignore_removed():
+                    handle.save_resume_data(
+                        flags=lt.save_resume_flags_t.only_if_modified
+                    )
 
     async def _periodic_save_all(self) -> None:
         while True:
             await asyncio.sleep(self.SAVE_ALL_INTERVAL)
             await self._save_all_if_modified(flags=0)
 
-    async def _run(self) -> None:
-        periodic = asyncio.create_task(self._periodic_save_all())
-        alert_handler = asyncio.create_task(self._handle_alerts())
-        writer = asyncio.create_task(resumedb.write(self._pool, self._queue))
+    @contextlib.asynccontextmanager
+    async def record(self) -> AsyncIterator:
+        async with anyio.create_task_group() as writer_tasks:
+            writer_tasks.start_soon(resumedb.write, self._pool, self._queue)
+            async with anyio.create_task_group() as background_tasks:
+                async with anyio.create_task_group() as alert_tasks:
+                    alert_tasks.start_soon(
+                        self._handle_status_changes, background_tasks
+                    )
+                    alert_tasks.start_soon(self._handle_save_triggers)
 
-        _LOG.info("ResumeService started")
-        await self._closed
-        _LOG.info("ResumeService shutting down")
+                    async with anyio.create_task_group() as periodic_tasks:
+                        periodic_tasks.start_soon(self._periodic_save_all)
+                        yield
+                        periodic_tasks.cancel_scope.cancel()
 
-        periodic.cancel()
-
-        # Design notes: We'd like to explicitly wait for all
-        # save_resume_data_alerts and all triggering alerts
-        # (storage_moved_alert, etc) to be received. That would require
-        # tracking many calls like move_storage() across all code, and this may
-        # expand to include other calls. I could not find a good approach to do
-        # this from python. For now, just wait for events with a timeout
-
-        # move_storage() across filesystems may take a long time, so don't
-        # trust a short timeout. We *could* do this by waiting for alerts but
-        # maybe we'll use command counts pretty soon
-        while True:
-            num_moving_storage = await self._num_moving_storage()
-            if num_moving_storage == 0:
-                break
-            _LOG.info(
-                "shutdown: waiting for %d torrents to be done moving storage",
-                num_moving_storage,
-            )
-            await asyncio.sleep(1)
-
-        # final save
-        await self._save_all_if_modified(flags=lt.save_resume_flags_t.flush_disk_cache)
-
-        _LOG.info("shutdown: waiting for final resume data")
-        while True:
-            self._got_alert.clear()
-            await concurrency.wait_first([self._got_alert.wait(), asyncio.sleep(1)])
-            if not self._got_alert.is_set():
-                break
-
-        alert_handler.cancel()
-
-        _LOG.debug("shutdown: waiting for resume data write jobs to complete")
-        self._queue.put_nowait(None)
-        try:
-            await asyncio.wait_for(writer, self.TIMEOUT)
-        except asyncio.TimeoutError:
-            warnings.warn(
-                "Timed out waiting for resume data write jobs. This is a bug. "
-                "Resume data is probably incomplete"
-            )
-
-    def start(self) -> None:
-        assert self._task is None
-        self._task = asyncio.create_task(self._run())
-
-    def close(self) -> None:
-        if not self._closed.done():
-            self._closed.set_result(None)
-
-    async def wait_closed(self) -> None:
-        assert self._task is not None
-        await self._task
+                    _LOG.debug(
+                        "shutdown: waiting for all torrents to be done moving storage"
+                    )
+                    await self._wait_done_moving_storage()
+                    await self._save_all_if_modified(
+                        flags=lt.save_resume_flags_t.flush_disk_cache
+                    )
+                    _LOG.debug("shutdown: waiting for final resume data")
+                    await self._wait_all_resume_data_received()
+                    alert_tasks.cancel_scope.cancel()
+                _LOG.debug("shutdown: waiting for resume data background tasks")
+            self._queue.put_nowait(None)
+            _LOG.debug("shutdown: waiting for resume data write jobs to complete")
 
     async def _save_all_if_modified(self, *, flags: int) -> None:
         # Loading all handles at once in python could be cumbersome at large
@@ -247,19 +233,80 @@ class ResumeService:
         with ltpy.translate_exceptions():
             # DOES block
             handles = await asyncio.to_thread(self._session.get_torrents)
-        # Dispatch need_save_resume_data() all at once
-        dispatch = [(h, asyncio.to_thread(h.need_save_resume_data)) for h in handles]
         # We don't use save_resume_data(flags=only_if_modified), to avoid
         # overloading the alert queue
-        for handle, need_save_resume_data in dispatch:
-            with contextlib.suppress(ltpy.InvalidTorrentHandleError):
-                with ltpy.translate_exceptions():
-                    if await need_save_resume_data:
-                        handle.save_resume_data(flags=flags)
+        handles_needing_save_resume_data: list[lt.torrent_handle] = []
 
-    async def _num_moving_storage(self) -> int:
-        with ltpy.translate_exceptions():
-            # DOES block
-            handles = await asyncio.to_thread(self._session.get_torrents)
-        statuses = await asyncio.gather(*[asyncio.to_thread(h.status) for h in handles])
-        return sum(status.moving_storage for status in statuses)
+        async def check_one(handle: lt.torrent_handle) -> None:
+            with _translate_and_ignore_removed():
+                if await asyncio.to_thread(handle.need_save_resume_data):
+                    handles_needing_save_resume_data.append(handle)
+
+        async with anyio.create_task_group() as tasks:
+            for handle in handles:
+                tasks.start_soon(check_one, handle)
+        for handle in handles_needing_save_resume_data:
+            with _translate_and_ignore_removed():
+                handle.save_resume_data(flags=flags)
+
+    async def _wait_done_moving_storage(self) -> None:
+        futures: dict[lt.torrent_handle, asyncio.Future] = collections.defaultdict(
+            asyncio.get_event_loop().create_future
+        )
+
+        async def wait_for_one(handle: lt.torrent_handle) -> None:
+            try:
+                with ltpy.translate_exceptions():
+                    # TODO: use query_name once it's bound
+                    status = await asyncio.to_thread(handle.status)
+                    name = await asyncio.to_thread(handle.name)
+            except ltpy.InvalidTorrentHandleError:
+                return
+            if not status.moving_storage:
+                return
+            _LOG.info("shutdown: waiting for storage move to complete: %s", name)
+            await futures[handle]
+            _LOG.info("shutdown: done waiting: %s", name)
+
+        async with contextlib.AsyncExitStack() as stack:
+            iterator = await stack.enter_async_context(
+                self._iter_alerts(
+                    lt.alert_category.storage | lt.alert_category.status,
+                    lt.storage_moved_alert,
+                    lt.storage_moved_failed_alert,
+                    lt.torrent_removed_alert,
+                )
+            )
+
+            async def handle_alerts() -> None:
+                async for alert in iterator:
+                    handle = cast(lt.torrent_alert, alert).handle
+                    future = futures[handle]
+                    if not future.done():
+                        future.set_result(None)
+
+            alert_tasks = await stack.enter_async_context(anyio.create_task_group())
+            alert_tasks.start_soon(handle_alerts)
+            with ltpy.translate_exceptions():
+                handles = await asyncio.to_thread(self._session.get_torrents)
+            async with anyio.create_task_group() as wait_tasks:
+                for handle in handles:
+                    wait_tasks.start_soon(wait_for_one, handle)
+            alert_tasks.cancel_scope.cancel()
+
+    async def _wait_all_resume_data_received(self) -> None:
+        # Design notes: We'd like to explicitly wait for all
+        # save_resume_data_alerts and all triggering alerts
+        # (storage_moved_alert, etc) to be received. That would require
+        # tracking many calls like move_storage() across all code, and this may
+        # expand to include other calls. I could not find a good approach to do
+        # this from python. For now, just wait for events with a timeout
+        _LOG.info("shutdown: waiting for final resume data")
+        done = False
+        while not done:
+            self._got_alert.clear()
+            try:
+                async with anyio.fail_after(1):
+                    await self._got_alert.wait()
+            except TimeoutError:
+                done = True

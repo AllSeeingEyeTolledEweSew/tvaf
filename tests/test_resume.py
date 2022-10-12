@@ -68,15 +68,13 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         )
         self.resume = resume_lib.ResumeService(
             session=self.session,
-            alert_driver=self.alert_driver,
+            iter_alerts=self.alert_driver.iter_alerts,
             pool=dbver.null_pool(self.conn_factory),
         )
-        self.resume.start()
+        self.record = self.resume.record
         self.alert_driver_task = asyncio.create_task(self.alert_driver.run())
 
     async def asyncTearDown(self) -> None:
-        self.resume.close()
-        await asyncio.wait_for(self.resume.wait_closed(), 60)
         self.alert_driver.shutdown()
         with anyio.fail_after(60):
             await self.alert_driver_task
@@ -93,21 +91,20 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         return await concurrency.alist(concurrency.iter_in_thread(inner()))
 
     async def test_mid_download(self) -> None:
-        atp = self.torrent.atp()
-        atp.flags &= ~lt.torrent_flags.paused
-        atp.save_path = self.tempdir.name
-        handle = self.session.add_torrent(atp)
-        await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 60)
-        handle.add_piece(0, self.torrent.pieces[0], 0)
+        async with self.record():
+            atp = self.torrent.atp()
+            atp.flags &= ~lt.torrent_flags.paused
+            atp.save_path = self.tempdir.name
+            handle = self.session.add_torrent(atp)
+            await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 60)
+            handle.add_piece(0, self.torrent.pieces[0], 0)
 
-        for _ in lib.loop_until_timeout(60, msg="piece finish"):
-            status = handle.status(flags=lt.torrent_handle.query_pieces)
-            if any(status.pieces):
-                break
+            for _ in lib.loop_until_timeout(60, msg="piece finish"):
+                status = handle.status(flags=lt.torrent_handle.query_pieces)
+                if any(status.pieces):
+                    break
 
-        self.session.pause()
-        self.resume.close()
-        await asyncio.wait_for(self.resume.wait_closed(), 60)
+            self.session.pause()
 
         def atp_have_piece(atp: lt.add_torrent_params, index: int) -> bool:
             if atp.have_pieces[index]:
@@ -125,22 +122,21 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(atp_have_piece(atp, 0))
 
     async def test_finished(self) -> None:
-        atp = self.torrent.atp()
-        atp.flags &= ~lt.torrent_flags.paused
-        atp.save_path = self.tempdir.name
-        handle = self.session.add_torrent(atp)
-        await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 60)
-        for i, piece in enumerate(self.torrent.pieces):
-            handle.add_piece(i, piece, 0)
+        async with self.record():
+            atp = self.torrent.atp()
+            atp.flags &= ~lt.torrent_flags.paused
+            atp.save_path = self.tempdir.name
+            handle = self.session.add_torrent(atp)
+            await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 60)
+            for i, piece in enumerate(self.torrent.pieces):
+                handle.add_piece(i, piece, 0)
 
-        for _ in lib.loop_until_timeout(60, msg="finished state"):
-            status = handle.status()
-            if status.state in (status.states.finished, status.states.seeding):
-                break
+            for _ in lib.loop_until_timeout(60, msg="finished state"):
+                status = handle.status()
+                if status.state in (status.states.finished, status.states.seeding):
+                    break
 
-        self.session.pause()
-        self.resume.close()
-        await asyncio.wait_for(self.resume.wait_closed(), 60)
+            self.session.pause()
 
         atps = await self.get_resume_data()
         self.assertEqual(len(atps), 1)
@@ -149,47 +145,45 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(atp.have_pieces))
 
     async def test_remove_before_save(self) -> None:
-        for _ in lib.loop_until_timeout(60, msg="remove-before-save"):
-            atp = self.torrent.atp()
-            atp.flags &= ~lt.torrent_flags.paused
-            atp.save_path = self.tempdir.name
-            handle = self.session.add_torrent(atp)
-            await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 60)
+        async with self.record():
+            for _ in lib.loop_until_timeout(60, msg="remove-before-save"):
+                atp = self.torrent.atp()
+                atp.flags &= ~lt.torrent_flags.paused
+                atp.save_path = self.tempdir.name
+                handle = self.session.add_torrent(atp)
+                await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 60)
 
-            try:
-                with ltpy.translate_exceptions():
-                    self.session.remove_torrent(handle)
-                    handle.save_resume_data()
-                break
-            except ltpy.InvalidTorrentHandleError:
-                pass
+                try:
+                    with ltpy.translate_exceptions():
+                        self.session.remove_torrent(handle)
+                        handle.save_resume_data()
+                    break
+                except ltpy.InvalidTorrentHandleError:
+                    pass
 
-        self.session.pause()
-        self.resume.close()
-        await asyncio.wait_for(self.resume.wait_closed(), 60)
+            self.session.pause()
 
         atps = await self.get_resume_data()
         self.assertEqual(atps, [])
 
     async def test_finish_remove_terminate(self) -> None:
-        atp = self.torrent.atp()
-        atp.flags &= ~lt.torrent_flags.paused
-        atp.save_path = self.tempdir.name
-        handle = self.session.add_torrent(atp)
-        await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 60)
-        for i, piece in enumerate(self.torrent.pieces):
-            handle.add_piece(i, piece, 0)
+        async with self.record():
+            atp = self.torrent.atp()
+            atp.flags &= ~lt.torrent_flags.paused
+            atp.save_path = self.tempdir.name
+            handle = self.session.add_torrent(atp)
+            await asyncio.wait_for(lib.wait_done_checking_or_error(handle), 60)
+            for i, piece in enumerate(self.torrent.pieces):
+                handle.add_piece(i, piece, 0)
 
-        for _ in lib.loop_until_timeout(60, msg="finished state"):
-            status = handle.status()
-            if status.state in (status.states.finished, status.states.seeding):
-                break
+            for _ in lib.loop_until_timeout(60, msg="finished state"):
+                status = handle.status()
+                if status.state in (status.states.finished, status.states.seeding):
+                    break
 
-        # Synchronously remove torrent and close
-        self.session.remove_torrent(handle)
-        self.session.pause()
-        self.resume.close()
-        await asyncio.wait_for(self.resume.wait_closed(), 60)
+            # Synchronously remove torrent and close
+            self.session.remove_torrent(handle)
+            self.session.pause()
 
         atps = await self.get_resume_data()
         self.assertEqual(atps, [])

@@ -166,7 +166,7 @@ resume_db_pool = dbver.null_pool(_resume_db_factory)
 async def get_resume_service() -> resume_lib.ResumeService:
     return resume_lib.ResumeService(
         session=await get_session(),
-        alert_driver=await get_alert_driver(),
+        iter_alerts=(await get_alert_driver()).iter_alerts,
         pool=resume_db_pool,
     )
 
