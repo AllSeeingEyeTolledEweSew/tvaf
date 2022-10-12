@@ -72,8 +72,7 @@ def conn(magnet_atp: lt.add_torrent_params) -> apsw.Connection:
 
 
 def test_update_info(ti: lt.torrent_info, conn: apsw.Connection) -> None:
-    resumedb.update_info_hashes(ti.info_hashes(), conn)
-    resumedb.update_info(ti, conn)
+    resumedb.update_info_hashes_and_info(ti, conn)
 
     atps = list(resumedb.iter_resume_data_from_db(conn))
     assert len(atps) == 1
@@ -85,8 +84,7 @@ def test_update_info(ti: lt.torrent_info, conn: apsw.Connection) -> None:
 def test_update_resume_data(
     ti: lt.torrent_info, atp: lt.add_torrent_params, conn: apsw.Connection
 ) -> None:
-    resumedb.update_info_hashes(ti.info_hashes(), conn)
-    resumedb.update_info(ti, conn)
+    resumedb.update_info_hashes_and_info(ti, conn)
 
     atp.save_path = "expected"
     resumedb.update_resume_data(atp, conn)
@@ -102,8 +100,7 @@ def test_update_resume_data(
 @pytest.mark.parametrize("valid", (True, False), ids=("valid", "invalidated"))
 def test_delete(ti: lt.torrent_info, conn: apsw.Connection, valid: bool) -> None:
     if valid:
-        resumedb.update_info_hashes(ti.info_hashes(), conn)
-        resumedb.update_info(ti, conn)
+        resumedb.update_info_hashes_and_info(ti, conn)
 
     resumedb.delete(ti.info_hashes(), conn)
 
@@ -117,8 +114,7 @@ def test_update_resume_data_delete(
     ti: lt.torrent_info, atp: lt.add_torrent_params, conn: apsw.Connection, valid: bool
 ) -> None:
     if valid:
-        resumedb.update_info_hashes(ti.info_hashes(), conn)
-        resumedb.update_info(ti, conn)
+        resumedb.update_info_hashes_and_info(ti, conn)
 
     atp.save_path = "expected"
     resumedb.update_resume_data(atp, conn)

@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable
 from collections.abc import Iterator
 import contextlib
 import functools
@@ -140,7 +139,7 @@ class ResumeService:
                     )
 
     def _metadata_received(self, handle: lt.torrent_handle) -> None:
-        async def get_ti() -> Optional[lt.torrent_info]:
+        async def maybe_update_info_hashes_and_info() -> resumedb.Job:
             # As of 2.0.6, metadata_received_alert may still be posted after
             # torrent_removed_alert. This creates pathological cases like this:
             # - add a hybrid torrent without metadata
@@ -153,44 +152,20 @@ class ResumeService:
             if not await asyncio.to_thread(
                 ltpy.handle_in_session, handle, self._session
             ):
-                return None
+                return lambda conn: None
             try:
                 with ltpy.translate_exceptions():
                     # DOES block
                     ti = await asyncio.to_thread(handle.torrent_file)
             except ltpy.InvalidTorrentHandleError:
-                return None
+                return lambda conn: None
             # metadata_received_alert is only emitted when we have the complete info
             # section, including all piece layers for a v2 torrent, so torrent_file()
             # should always be non-null
             assert ti is not None
-            return ti
+            return functools.partial(resumedb.update_info_hashes_and_info, ti)
 
-        async def maybe_update_info_hashes(
-            ti_task: Awaitable[Optional[lt.torrent_info]],
-        ) -> resumedb.Job:
-            ti = await ti_task
-            if ti is None:
-                return lambda conn: None
-            with ltpy.translate_exceptions():
-                # Does not block
-                return functools.partial(resumedb.update_info_hashes, ti.info_hashes())
-
-        async def maybe_update_info(
-            ti_task: Awaitable[Optional[lt.torrent_info]],
-        ) -> resumedb.Job:
-            ti = await ti_task
-            if ti is None:
-                return lambda conn: None
-            with ltpy.translate_exceptions():
-                # Does not block
-                return functools.partial(resumedb.update_info, ti)
-
-        # We need either both tasks or neither, so have them both await a shared
-        # torrent_info result
-        ti_task = asyncio.create_task(get_ti())
-        self._queue.put_nowait(asyncio.create_task(maybe_update_info_hashes(ti_task)))
-        self._queue.put_nowait(asyncio.create_task(maybe_update_info(ti_task)))
+        self._queue.put_nowait(asyncio.create_task(maybe_update_info_hashes_and_info()))
 
     def _add(self, func: Callable[..., None], *args: Any) -> None:
         job = functools.partial(func, *args)

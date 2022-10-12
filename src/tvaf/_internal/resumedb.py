@@ -160,21 +160,21 @@ def update_resume_data(atp: lt.add_torrent_params, conn: apsw.Connection) -> Non
     )
 
 
-def update_info_hashes(ih: lt.info_hash_t, conn: apsw.Connection) -> None:
-    params = _ih_bytes(ih)
+def update_info_hashes_and_info(ti: lt.torrent_info, conn: apsw.Connection) -> None:
+    params = _ih_bytes(ti.info_hashes())
     info_sha1, info_sha256 = params
-    if info_sha1 is None or info_sha256 is None:
-        return
-    conn.cursor().execute(
-        "UPDATE torrent SET info_sha1 = ?1 "
-        "WHERE (info_sha1 IS NULL) AND (info_sha256 IS ?2)",
-        params,
-    )
-    conn.cursor().execute(
-        "UPDATE torrent SET info_sha256 = ?2 "
-        "WHERE (info_sha256 IS NULL) AND (info_sha1 IS ?1)",
-        params,
-    )
+    if info_sha1 is not None and info_sha256 is not None:
+        conn.cursor().execute(
+            "UPDATE torrent SET info_sha1 = ?1 "
+            "WHERE (info_sha1 IS NULL) AND (info_sha256 IS ?2)",
+            params,
+        )
+        conn.cursor().execute(
+            "UPDATE torrent SET info_sha256 = ?2 "
+            "WHERE (info_sha256 IS NULL) AND (info_sha1 IS ?1)",
+            params,
+        )
+    update_info(ti, conn)
 
 
 def update_info(ti: lt.torrent_info, conn: apsw.Connection) -> None:
