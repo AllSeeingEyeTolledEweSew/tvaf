@@ -63,9 +63,9 @@ async def get_torrents() -> list[ltmodels.TorrentStatus]:
                 status = await asyncio.to_thread(handle.status, flags=0x7FFFFFFF)
         index_to_status_model[index] = ltmodels.TorrentStatus.from_orm(status)
 
-    async with anyio.create_task_group() as task_group:
+    async with anyio.create_task_group() as tasks:
         for index, handle in enumerate(handles):
-            task_group.start_soon(fetch_one_status, index, handle)
+            tasks.start_soon(fetch_one_status, index, handle)
     return [status for _, status in sorted(index_to_status_model.items())]
 
 

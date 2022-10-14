@@ -42,19 +42,19 @@ async def get_torrent_info(
         lt.torrent_removed_alert,
         handle=handle,
     ) as iterator:
-        async with anyio.create_task_group() as task_group:
+        async with anyio.create_task_group() as tasks:
 
             async def handle_alerts() -> None:
                 async for alert in iterator:
-                    task_group.cancel_scope.cancel()
+                    tasks.cancel_scope.cancel()
 
-            task_group.start_soon(handle_alerts)
+            tasks.start_soon(handle_alerts)
 
             # Check torrent_file() only after the iterator is created, to
             # ensure we see metadata_received_alert
             ti = await get()
             if ti is not None:
-                task_group.cancel_scope.cancel()
+                tasks.cancel_scope.cancel()
                 return ti
             if _waiting_for_alert is not None:
                 _waiting_for_alert.set_result(None)

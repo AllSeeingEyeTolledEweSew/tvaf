@@ -108,8 +108,8 @@ async def test_set_after_start(
             )
         )
 
-    async with anyio.create_task_group() as task_group:
-        task_group.start_soon(get)
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(get)
         await waiting_for_alert
         handle.set_metadata(ti.info_section())
     got_ti = await result
@@ -139,7 +139,7 @@ async def test_remove_after_start(
         )
 
     with pytest.raises(ltpy.InvalidTorrentHandleError):
-        async with anyio.create_task_group() as task_group:
-            task_group.start_soon(get)
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(get)
             await waiting_for_alert
             session.remove_torrent(handle)

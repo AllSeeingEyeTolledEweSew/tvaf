@@ -132,9 +132,9 @@ async def get_name_to_configure_swarm(
         with contextlib.suppress(KeyError):
             name_to_configure_swarm[name] = await access(info_hashes)
 
-    async with anyio.create_task_group() as task_group:
+    async with anyio.create_task_group() as tasks:
         for name, access in get_name_to_access_swarm().items():
-            task_group.start_soon(
+            tasks.start_soon(
                 add_access, name, access, name=f"access swarm: {name} for {info_hashes}"
             )
     return name_to_configure_swarm

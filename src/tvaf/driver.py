@@ -198,12 +198,10 @@ class AlertDriver:
             async with contextlib.AsyncExitStack() as stack:
                 stack.enter_context(self._index(sub))
                 stack.enter_context(self._use_alert_mask(alert_mask))
-                watchdog_task_group = await stack.enter_async_context(
-                    anyio.create_task_group()
-                )
-                watchdog_task_group.start_soon(self._share_fate)
+                tasks = await stack.enter_async_context(anyio.create_task_group())
+                tasks.start_soon(self._share_fate)
                 yield sub.iterator()
-                watchdog_task_group.cancel_scope.cancel()
+                tasks.cancel_scope.cancel()
         finally:
             sub.maybe_release()
 
@@ -254,8 +252,8 @@ class AlertDriver:
 
     async def run(self) -> None:
         try:
-            async with anyio.create_task_group() as task_group:
-                task_group.start_soon(self._share_fate)
+            async with anyio.create_task_group() as tasks:
+                tasks.start_soon(self._share_fate)
                 with pop_alerts_lib.get_pop_alerts(self._session) as pop_alerts:
                     while True:
                         await self.wait_safe()

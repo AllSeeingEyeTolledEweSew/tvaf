@@ -48,7 +48,7 @@ class MainTaskLifespanAdaptor:
         do_startup: Callable[[], Coroutine[Any, Any, Any]],
         do_shutdown: Callable[[], Coroutine[Any, Any, Any]],
     ) -> None:
-        self._task_group = anyio.create_task_group()
+        self._tasks = anyio.create_task_group()
         self._task: Optional[asyncio.Task] = None
         self._startup_event = asyncio.get_event_loop().create_future()
         self._shutdown_event = asyncio.get_event_loop().create_future()
@@ -78,7 +78,7 @@ class MainTaskLifespanAdaptor:
     async def _run(self) -> None:
         assert self._task is asyncio.current_task()
         assert not self._shutdown_event.done()
-        async with self._task_group:
+        async with self._tasks:
             await self.do_startup()
             self._startup_event.set_result(None)
             await self._shutdown_event
@@ -90,4 +90,4 @@ class MainTaskLifespanAdaptor:
         *args: Any,
         name: str = None
     ) -> None:
-        self._task_group.start_soon(func, *args, name=name)
+        self._tasks.start_soon(func, *args, name=name)
