@@ -136,7 +136,7 @@ class AlertDriver:
     ) -> None:
         self._use_alert_mask = use_alert_mask
         self._session = session
-        self._shutdown = asyncio.get_event_loop().create_future()
+        self._fate = asyncio.get_event_loop().create_future()
 
         # A shared counter of how many subscriptions' iterators *may* be referencing
         # the current batch of alerts
@@ -167,9 +167,8 @@ class AlertDriver:
                     if not handle_to_subs:
                         del self._type_to_handle_to_subs[type_]
 
-    async def _do_raise_on_shutdown(self) -> None:
-        await asyncio.shield(self._shutdown)
-        raise ShutdownError()
+    async def _share_fate(self) -> None:
+        await asyncio.shield(self._fate)
 
     # Design notes: ideally this would just return an AsyncGenerator. But if
     # the generator references alerts and is then "dropped" (canceled or
@@ -202,7 +201,7 @@ class AlertDriver:
                 watchdog_task_group = await stack.enter_async_context(
                     anyio.create_task_group()
                 )
-                watchdog_task_group.start_soon(self._do_raise_on_shutdown)
+                watchdog_task_group.start_soon(self._share_fate)
                 yield sub.iterator()
                 watchdog_task_group.cancel_scope.cancel()
         finally:
@@ -250,21 +249,20 @@ class AlertDriver:
                 _LOG.warning(msg)
 
     def shutdown(self) -> None:
-        self._shutdown.set_result(None)
+        if not self._fate.done():
+            self._fate.set_exception(ShutdownError())
 
     async def run(self) -> None:
-        _LOG.debug("AlertDriver starting up...")
         try:
             async with anyio.create_task_group() as task_group:
-
-                async def cancel_on_shutdown() -> None:
-                    await self._shutdown
-                    task_group.cancel_scope.cancel()
-
-                task_group.start_soon(cancel_on_shutdown)
+                task_group.start_soon(self._share_fate)
                 with pop_alerts_lib.get_pop_alerts(self._session) as pop_alerts:
                     while True:
                         await self.wait_safe()
                         self.feed(await pop_alerts())
-        finally:
-            _LOG.debug("AlertDriver shutting down")
+        except ShutdownError:
+            pass
+        except BaseException as exc:
+            if not self._fate.done():
+                self._fate.set_exception(exc)
+            raise
