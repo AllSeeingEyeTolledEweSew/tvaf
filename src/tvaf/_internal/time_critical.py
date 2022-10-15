@@ -21,8 +21,6 @@ from tvaf import ltpy
 
 
 class TimeCriticalState:
-    SEQ_BUFFER = 30
-
     def __init__(self, handle: lt.torrent_handle):
         self._handle = handle
         self._refcount: dict[int, int] = {}
@@ -45,14 +43,17 @@ class TimeCriticalState:
                     self._refcount[piece] = current - 1
 
     @contextlib.contextmanager
-    def time_critical_read(self, pieces: Sequence[int]) -> Iterator[Iterator[int]]:
+    def time_critical_read(
+        self, pieces: Sequence[int], *, buffer_size: int
+    ) -> Iterator[Iterator[int]]:
+        assert buffer_size > 0
         reset_on_exit = True
         prev_reading: set[int] = set()
 
         def iterator() -> Iterator[int]:
             nonlocal prev_reading
             for i, piece in enumerate(pieces):
-                reading = set(pieces[i : i + self.SEQ_BUFFER])
+                reading = set(pieces[i : i + buffer_size])
                 self._delta_reads(prev_reading, reading)
                 prev_reading = reading
                 yield piece

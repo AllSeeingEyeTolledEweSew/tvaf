@@ -61,7 +61,7 @@ def handle(atp: lt.add_torrent_params, session: lt.session) -> lt.torrent_handle
 def test_contract(handle: lt.torrent_handle) -> None:
     state = time_critical_lib.TimeCriticalState(handle)
     desired_pieces = list(range(10, NUM_PIECES - 10))
-    with state.time_critical_read(desired_pieces) as iterator:
+    with state.time_critical_read(desired_pieces, buffer_size=30) as iterator:
         got_pieces = list(iterator)
     assert got_pieces == desired_pieces
 
@@ -73,7 +73,7 @@ def test_remove_before_read(handle: lt.torrent_handle, session: lt.session) -> N
     while handle.is_valid():
         pass
     with pytest.raises(ltpy.InvalidTorrentHandleError):
-        with state.time_critical_read(desired_pieces) as iterator:
+        with state.time_critical_read(desired_pieces, buffer_size=30) as iterator:
             next(iterator)
 
 
@@ -82,7 +82,7 @@ def test_remove_during_read(handle: lt.torrent_handle, session: lt.session) -> N
     desired_pieces = list(range(10, NUM_PIECES - 10))
     # TODO: if I scope pytest.raises() within read_pieces(), it fails. Why?
     with pytest.raises(ltpy.InvalidTorrentHandleError):
-        with state.time_critical_read(desired_pieces) as iterator:
+        with state.time_critical_read(desired_pieces, buffer_size=30) as iterator:
             next(iterator)
             session.remove_torrent(handle)
             while handle.is_valid():
@@ -96,7 +96,7 @@ def test_set_priorities(handle: lt.torrent_handle) -> None:
     assert all(p > 0 and p < 7 for p in initial_priorities)
     state = time_critical_lib.TimeCriticalState(handle)
     desired_pieces = list(range(10, NUM_PIECES - 10))
-    with state.time_critical_read(desired_pieces) as iterator:
+    with state.time_critical_read(desired_pieces, buffer_size=30) as iterator:
         # We shouldn't change priorities until the iterator is advanced
         assert handle.get_piece_priorities() == initial_priorities
         # When we advance the iterator, we expect the current piece to be realtime,
@@ -124,7 +124,7 @@ def test_reset_priorities_on_error(handle: lt.torrent_handle) -> None:
     state = time_critical_lib.TimeCriticalState(handle)
     desired_pieces = list(range(10, NUM_PIECES - 10))
     with pytest.raises(_DummyError):
-        with state.time_critical_read(desired_pieces) as iterator:
+        with state.time_critical_read(desired_pieces, buffer_size=30) as iterator:
             next(iterator)
             raise _DummyError()
     # After the context manager exits, no pieces should be realtime priority
