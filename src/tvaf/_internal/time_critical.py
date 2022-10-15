@@ -20,7 +20,7 @@ import libtorrent as lt
 from tvaf import ltpy
 
 
-class ReadPrioritizer:
+class TimeCriticalState:
     SEQ_BUFFER = 30
 
     def __init__(self, handle: lt.torrent_handle):
@@ -45,7 +45,7 @@ class ReadPrioritizer:
                     self._refcount[piece] = current - 1
 
     @contextlib.contextmanager
-    def read_pieces(self, pieces: Sequence[int]) -> Iterator[Iterator[int]]:
+    def time_critical_read(self, pieces: Sequence[int]) -> Iterator[Iterator[int]]:
         reset_on_exit = True
         prev_reading: set[int] = set()
 
