@@ -51,12 +51,12 @@ repos:
         - httpx>=1.0.0.beta0,<2
         - types-requests>=2.0,<3
         - pytest>=7,<8
-- repo: https://gitlab.com/pycqa/flake8.git
-  rev: 3.9.2
+- repo: https://github.com/PyCQA/flake8
+  rev: 5.0.4
   hooks:
     - id: flake8
       additional_dependencies: [flake8-2020, flake8-bugbear, flake8-comprehensions, flake8-logging-format, flake8-mutable, pep8-naming, flake8-tidy-imports, flake8-annotations-coverage]
-- repo: https://gitlab.com/pycqa/pydocstyle.git
+- repo: https://github.com/PyCQA/pydocstyle
   rev: 6.1.1
   hooks:
     - id: pydocstyle
