@@ -77,8 +77,7 @@ class LifespanTest(TemporaryDirectoryTestCase):
             await asyncio.wait_for(services.set_config(self.config), 60)
 
             # Test loaded into available config
-            config = await asyncio.wait_for(services.get_config(), 60)
-            self.assertEqual(config["__test_key__"], "value")
+            self.assertEqual(services.get_config()["__test_key__"], "value")
             # Test written to disk
             config = await config_lib.Config.from_disk(services.CONFIG_PATH)
             self.assertEqual(config, self.config)
@@ -88,17 +87,15 @@ class LifespanTest(TemporaryDirectoryTestCase):
             self.config["torrent_default_storage_mode"] = "invalid"
             with self.assertRaises(config_lib.InvalidConfigError):
                 await asyncio.wait_for(services.set_config(self.config), 60)
-            config = await asyncio.wait_for(services.get_config(), 60)
             self.assertNotEqual(
-                config.get_str("torrent_default_storage_mode"), "invalid"
+                services.get_config().get_str("torrent_default_storage_mode"), "invalid"
             )
 
     async def test_save_and_load_resume_data(self) -> None:
         async with self.start_stop_session():
-            session = await asyncio.wait_for(services.get_session(), 60)
             atp = tdummy.DEFAULT.atp()
             atp.save_path = self.tempdir.name
-            session.async_add_torrent(atp)
+            services.get_session().async_add_torrent(atp)
 
         def get_resume_data() -> Iterator[lt.add_torrent_params]:
             with services.resume_db_pool() as conn:
@@ -111,8 +108,7 @@ class LifespanTest(TemporaryDirectoryTestCase):
         self.assertEqual(len(resume_data), 1)
 
         async with self.start_stop_session():
-            session = await asyncio.wait_for(services.get_session(), 60)
-            torrents = await asyncio.to_thread(session.get_torrents)
+            torrents = await asyncio.to_thread(services.get_session().get_torrents)
             self.assertEqual(len(torrents), 1)
 
     async def test_process_lock(self) -> None:
@@ -132,8 +128,7 @@ class TestDefaultATP(TemporaryDirectoryTestCase):
 
     async def test_config_defaults(self) -> None:
         save_path = str(await asyncio.to_thread(pathlib.Path("download").resolve))
-        config = await asyncio.wait_for(services.get_config(), 60)
-        self.assertEqual(config["torrent_default_save_path"], save_path)
+        self.assertEqual(services.get_config()["torrent_default_save_path"], save_path)
 
         atp = await asyncio.wait_for(atp_services.get_default(), 60)
 

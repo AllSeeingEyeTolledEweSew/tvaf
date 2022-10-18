@@ -76,7 +76,7 @@ class RemoveTest(lib.AppTestWithTorrent, lib.TestCase):
             await asyncio.to_thread(
                 ltpy.handle_in_session,
                 self.handle,
-                await services.get_session(),
+                services.get_session(),
             )
         )
 

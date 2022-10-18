@@ -29,7 +29,7 @@ _LOG = logging.getLogger(__name__)
 
 @ROUTER.get("/", response_class=starlette.responses.JSONResponse)
 async def get() -> config_lib.Config:
-    return await services.get_config()
+    return services.get_config()
 
 
 @ROUTER.post("/")

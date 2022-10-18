@@ -197,9 +197,8 @@ class AppTestWithTorrent(AppTest):
         atp = self.torrent.atp()
         atp.save_path = self.tempdir.name
         with anyio.fail_after(60):
-            session = await services.get_session()
             self.handle = await asyncio.to_thread(
-                session.add_torrent, atp  # type: ignore
+                services.get_session().add_torrent, atp  # type: ignore
             )
             # https://github.com/arvidn/libtorrent/issues/4980: add_piece() while
             # checking silently fails in libtorrent 1.2.8.

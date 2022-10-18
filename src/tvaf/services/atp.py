@@ -102,13 +102,15 @@ async def _get_defaults_from_config(
 
 @caches.asingleton()
 async def _get_defaults() -> dict[str, Any]:
-    return await _get_defaults_from_config(await services.get_config())
+    return await _get_defaults_from_config(services.get_config())
 
 
-@services.startup_plugin("10_default_atp")
-async def _startup_config_default() -> None:
+@services.main_plugin("10_default_atp")
+@contextlib.asynccontextmanager
+async def _main_config_default() -> AsyncIterator:
     # Parse existing config
     await _get_defaults()
+    yield
 
 
 @services.stage_config_plugin("50_default_atp")

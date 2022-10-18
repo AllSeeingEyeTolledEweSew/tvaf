@@ -87,9 +87,8 @@ class _Helper:
 
     @concurrency.acached_property
     async def existing_handle(self) -> lt.torrent_handle:
-        session = await services.get_session()
         return await asyncio.to_thread(
-            session.find_torrent, self.info_hashes.get_best()
+            services.get_session().find_torrent, self.info_hashes.get_best()
         )
 
     @concurrency.acached_property
@@ -103,7 +102,7 @@ class _Helper:
     async def torrent_info(self) -> lt.torrent_info:
         return await services_util.get_torrent_info(
             handle=await self.valid_handle,
-            iter_alerts=(await services.get_alert_driver()).iter_alerts,
+            iter_alerts=services.iter_alerts,
         )
 
     @concurrency.acached_property
@@ -153,10 +152,11 @@ class _Helper:
         await configure_swarm(atp)
         await atp_services.configure(atp)
         atp.flags &= ~lt.torrent_flags.duplicate_is_error
-        session = await services.get_session()
         # TODO: check against the requested network
         with ltpy.translate_exceptions():
-            return await asyncio.to_thread(session.add_torrent, atp)  # type: ignore
+            return await asyncio.to_thread(
+                services.get_session().add_torrent, atp  # type: ignore
+            )
 
 
 @ROUTER.api_route("/btih/{info_hash}/i/{file_index}", methods=["GET", "HEAD"])
@@ -213,7 +213,7 @@ async def read_file(
         # Will add the torrent if it hasn't been added yet
         piece_length = (await helper.torrent_info).piece_length()
         start_piece, stop_piece = util.range_to_pieces(piece_length, start, stop)
-        request_service = await services.get_request_service()
+        request_service = services._get_request_service()
         pieces = request_service.read_pieces(
             await helper.valid_handle, range(start_piece, stop_piece)
         )

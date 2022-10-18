@@ -37,8 +37,7 @@ async def find_torrent_in(session: lt.session, info_hash: bytes) -> lt.torrent_h
 
 
 async def find_torrent(info_hash: bytes) -> lt.torrent_handle:
-    session = await services.get_session()
-    return await find_torrent_in(session, info_hash)
+    return await find_torrent_in(services.get_session(), info_hash)
 
 
 @contextlib.contextmanager
@@ -52,9 +51,8 @@ def translate_exceptions() -> Iterator[None]:
 
 @ROUTER.get("/")
 async def get_torrents() -> list[ltmodels.TorrentStatus]:
-    session = await services.get_session()
     with ltpy.translate_exceptions():
-        handles = await asyncio.to_thread(session.get_torrents)
+        handles = await asyncio.to_thread(services.get_session().get_torrents)
     index_to_status_model: dict[int, ltmodels.TorrentStatus] = {}
 
     async def fetch_one_status(index: int, handle: lt.torrent_handle) -> None:
@@ -89,8 +87,7 @@ async def get_piece_priorities(
 
 @ROUTER.delete("/{info_hash}")
 async def remove(info_hash: ltmodels.Hex160) -> None:
-    session = await services.get_session()
-    handle = await find_torrent_in(session, info_hash)
+    handle = await find_torrent_in(services.get_session(), info_hash)
     with translate_exceptions():
         # NB: asynchronous, so not transactional
-        session.remove_torrent(handle, option=lt.session.delete_files)
+        services.get_session().remove_torrent(handle, option=lt.session.delete_files)

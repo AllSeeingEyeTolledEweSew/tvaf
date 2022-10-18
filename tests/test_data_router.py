@@ -150,7 +150,7 @@ class PublicFallbackTest(SeedTest, lib.TestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.seed.apply_settings({"enable_dht": True})
-        config = await services.get_config()
+        config = services.get_config()
         config["session_dht_bootstrap_nodes"] = self.seed_endpoint_str
         config["session_enable_dht"] = True
         await asyncio.wait_for(services.set_config(config), 60)
@@ -171,7 +171,7 @@ class PublicFallbackTest(SeedTest, lib.TestCase):
         self.assertEqual(r.content, self.torrent.files[0].data)
 
     async def test_disable(self) -> None:
-        config = await services.get_config()
+        config = services.get_config()
         config["public_enable"] = False
         await asyncio.wait_for(services.set_config(config), 60)
         r = await self.client.get(f"/d/btih/{self.torrent.sha1_hash}/i/0")
