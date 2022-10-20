@@ -22,6 +22,7 @@ from typing import Optional
 from typing import TypeVar
 from typing import Union
 
+import asyncstdlib
 import fastapi
 import libtorrent as lt
 from pydantic import NonNegativeInt
@@ -31,7 +32,6 @@ import starlette.responses
 import starlette.types
 
 from .. import byteranges
-from .. import concurrency
 from .. import ltmodels
 from .. import ltpy
 from .. import services
@@ -85,28 +85,28 @@ class _Helper:
         self.info_hashes = info_hashes
         self.file_index = file_index
 
-    @concurrency.acached_property
+    @asyncstdlib.cached_property
     async def existing_handle(self) -> lt.torrent_handle:
         session = await services.get_session()
         return await asyncio.to_thread(
             session.find_torrent, self.info_hashes.get_best()
         )
 
-    @concurrency.acached_property
+    @asyncstdlib.cached_property
     async def existing_torrent_info(self) -> Optional[lt.torrent_info]:
         handle = await self.existing_handle
         if not handle.is_valid():
             return None
         return await asyncio.to_thread(handle.torrent_file)
 
-    @concurrency.acached_property
+    @asyncstdlib.cached_property
     async def torrent_info(self) -> lt.torrent_info:
         return await services_util.get_torrent_info(
             handle=await self.valid_handle,
             iter_alerts=(await services.get_alert_driver()).iter_alerts,
         )
 
-    @concurrency.acached_property
+    @asyncstdlib.cached_property
     async def bounds(self) -> tuple[int, int]:
         try:
             # If the torrent exists and has metadata, get bounds from that
@@ -128,7 +128,7 @@ class _Helper:
                 detail="file does not exist in torrent",
             )
 
-    @concurrency.acached_property
+    @asyncstdlib.cached_property
     async def configure_swarm(
         self,
     ) -> swarm.ConfigureSwarm:
@@ -142,7 +142,7 @@ class _Helper:
             )
         return list(name_to_configure_swarm.values())[0]
 
-    @concurrency.acached_property
+    @asyncstdlib.cached_property
     async def valid_handle(self) -> lt.torrent_handle:
         existing = await self.existing_handle
         if existing.is_valid():

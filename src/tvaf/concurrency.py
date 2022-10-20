@@ -25,9 +25,6 @@ import itertools
 from typing import Any
 from typing import Callable
 from typing import cast
-from typing import Generic
-from typing import Optional
-from typing import overload
 from typing import TypeVar
 
 import cachetools.keys
@@ -174,32 +171,6 @@ def acached(cache: MutableMapping) -> Callable[[_CA], _CA]:
     return wrapper
 
 
-class _AcachedProperty(Generic[_T]):
-    def __init__(self, func: Callable[[Any], Awaitable[_T]]) -> None:
-        self._func = func
-        self._name: Optional[str] = None
-        self.__doc__ = func.__doc__
-
-    def __set_name__(self, owner: Any, name: str) -> None:
-        self._name = name
-
-    @overload
-    def __get__(self, instance: None, owner: type = None) -> _AcachedProperty[_T]:
-        ...
-
-    @overload
-    def __get__(self, instance: object, owner: type = None) -> Awaitable[_T]:
-        ...
-
-    def __get__(self, instance: Any, owner: Any = None) -> Any:
-        if instance is None:
-            return self
-        attrs = instance.__dict__
-        if self._name not in attrs:
-            attrs[self._name] = ensure_future(self._func(instance))
-        return attrs[self._name]
-
-
 def ensure_future(aw: Awaitable[_T]) -> asyncio.Future[_T]:
     """Schedules any awaitable as a task.
 
@@ -237,26 +208,6 @@ def ensure_future(aw: Awaitable[_T]) -> asyncio.Future[_T]:
 
         return asyncio.create_task(_wrapper())
     raise TypeError("An asyncio.Future, a coroutine, or an awaitable is required")
-
-
-# This could be 'class acached_property', but this setup helps linters
-def acached_property(func: Callable[[Any], Awaitable[_T]]) -> _AcachedProperty[_T]:
-    """Turns an asynchronous method into an awaitable property.
-
-    This is analogous to @functools.cached_property, for asynchronous
-    functions.
-
-    When the property is first accessed, its accessor function will be
-    scheduled with asyncio.create_task(). That Task will be returned on
-    subsequent access, so it can be awaited multiple times.
-
-    Args:
-        func: A property accessor function.
-
-    Returns:
-        An awaitable property.
-    """
-    return _AcachedProperty(func)
 
 
 class _MissingType:
