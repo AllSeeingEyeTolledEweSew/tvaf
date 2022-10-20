@@ -18,16 +18,10 @@ from collections.abc import AsyncIterator
 from collections.abc import Awaitable
 from collections.abc import Iterable
 from collections.abc import Iterator
-from collections.abc import MutableMapping
-import functools
 import inspect
 import itertools
 from typing import Any
-from typing import Callable
-from typing import cast
 from typing import TypeVar
-
-import cachetools.keys
 
 _T = TypeVar("_T")
 
@@ -135,40 +129,6 @@ class RefCount:
         """Waits until the internal counter is zero."""
         while self._count != 0:
             await self._is_zero.wait()
-
-
-_CA = TypeVar("_CA", bound=Callable[..., Awaitable])
-
-
-def acached(cache: MutableMapping) -> Callable[[_CA], _CA]:
-    """Decorates an asynchronous function with a cache.
-
-    This is analogous to cachetools.cached(), for asynchronous functions.
-
-    Args:
-        cache: A mapping to use as a cache. A common choice is
-            cachetools.LRUCache.
-
-    Returns:
-        A decorator function which takes an asynchronous function as input,
-        and returns an asynchronous function which caches its results.
-    """
-
-    def wrapper(func: _CA) -> _CA:
-        @functools.wraps(func)
-        async def wrapped(*args: Any, **kwargs: Any) -> Any:
-            key = cachetools.keys.hashkey(*args, **kwargs)
-            try:
-                return cache[key]
-            except KeyError:
-                pass
-            value = await func(*args, **kwargs)
-            cache[key] = value
-            return value
-
-        return cast(_CA, wrapped)
-
-    return wrapper
 
 
 def ensure_future(aw: Awaitable[_T]) -> asyncio.Future[_T]:

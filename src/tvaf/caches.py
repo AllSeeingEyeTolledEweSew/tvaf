@@ -20,9 +20,7 @@ from typing import cast
 from typing import Generic
 from typing import TypeVar
 
-import cachetools
-
-from . import concurrency
+import asyncstdlib
 
 _C = TypeVar("_C", bound=Callable[..., Any])
 _CA = TypeVar("_CA", bound=Callable[..., Awaitable])
@@ -52,24 +50,17 @@ def singleton() -> Callable[[_C], _LRUCacheWrapper[_C]]:
 
 def alru_cache(*, maxsize: int) -> Callable[[_CA], _LRUCacheWrapper[_CA]]:
     def wrapper(func: _CA) -> _LRUCacheWrapper[_CA]:
-        cache: cachetools.LRUCache = cachetools.LRUCache(maxsize)
-        wrapped = cast(_LRUCacheWrapper[_CA], concurrency.acached(cache)(func))
-        wrapped.cache_clear = cache.clear  # type: ignore
-        add_clear_callback(cache.clear)
+        wrapped = cast(
+            _LRUCacheWrapper[_CA], asyncstdlib.lru_cache(maxsize=maxsize)(func)
+        )
+        add_clear_callback(wrapped.cache_clear)
         return wrapped
 
     return wrapper
 
 
 def asingleton() -> Callable[[_CA], _LRUCacheWrapper[_CA]]:
-    def wrapper(func: _CA) -> _LRUCacheWrapper[_CA]:
-        cache: dict = {}
-        wrapped = concurrency.acached(cache)(func)
-        wrapped.cache_clear = cache.clear  # type: ignore
-        add_clear_callback(cache.clear)
-        return cast(_LRUCacheWrapper[_CA], wrapped)
-
-    return wrapper
+    return alru_cache(maxsize=1)
 
 
 def add_clear_callback(callback: Callable[[], Any]) -> None:
