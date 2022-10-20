@@ -24,6 +24,7 @@ from typing import Optional
 import warnings
 
 import apsw
+import asyncstdlib
 import dbver
 import libtorrent as lt
 
@@ -68,9 +69,12 @@ class ResumeService:
             with dbver.begin_pool(self._pool, dbver.LockMode.DEFERRED) as conn:
                 yield from iter_resume_data_from_db(conn)
 
-        async for atp in concurrency.iter_in_thread(iter_atps()):
-            # Does not block
-            self._session.async_add_torrent(atp)
+        async with asyncstdlib.scoped_iter(
+            concurrency.iter_in_thread(iter_atps())
+        ) as async_iter:
+            async for atp in async_iter:
+                # Does not block
+                self._session.async_add_torrent(atp)
 
     async def _handle_alerts(self) -> None:
         async with self._alert_driver.iter_alerts(

@@ -21,6 +21,7 @@ from typing import Callable
 from typing import cast
 
 import anyio
+import asyncstdlib
 import libtorrent as lt
 import pytest
 
@@ -98,7 +99,7 @@ async def test_prior_received(
     async with wait_pieces_lib.wait_pieces(
         handle, desired_pieces, poll_interval=0.1
     ) as iterator:
-        got = tuple([p async for p in iterator])
+        got = await asyncstdlib.tuple(iterator)
     assert got == desired_pieces
 
 
@@ -113,7 +114,7 @@ async def test_concurrent_receive(
     ) as iterator:
         for piece in completed_pieces:
             feed_piece(piece)
-        got = tuple([p async for p in iterator])
+        got = await asyncstdlib.tuple(iterator)
     assert got == desired_pieces
 
 

@@ -14,6 +14,7 @@
 from collections.abc import Iterator
 import threading
 
+import asyncstdlib
 import pytest
 
 from tvaf import concurrency
@@ -29,8 +30,7 @@ async def test_return_value() -> None:
         yield 2
         yield 3
 
-    aiterator = concurrency.iter_in_thread(iterator())
-    values = [value async for value in aiterator]
+    values = await asyncstdlib.list(concurrency.iter_in_thread(iterator()))
     assert values == [1, 2, 3]
 
 
@@ -39,10 +39,12 @@ async def test_exception() -> None:
         yield 1
         raise DummyException()
 
-    aiterator = concurrency.iter_in_thread(iterator())
-    with pytest.raises(DummyException):
-        async for value in aiterator:
-            pass
+    async with asyncstdlib.scoped_iter(
+        concurrency.iter_in_thread(iterator())
+    ) as async_iter:
+        with pytest.raises(DummyException):
+            async for value in async_iter:
+                pass
 
 
 async def test_really_in_thread() -> None:
@@ -50,8 +52,7 @@ async def test_really_in_thread() -> None:
         yield threading.get_ident()
 
     outside_ids = [threading.get_ident()]
-    aiterator = concurrency.iter_in_thread(iterator())
-    inside_ids = [value async for value in aiterator]
+    inside_ids = await asyncstdlib.list(concurrency.iter_in_thread(iterator()))
     assert outside_ids != inside_ids
 
 
@@ -59,8 +60,9 @@ async def test_small_batch_size() -> None:
     def iterator() -> Iterator[int]:
         yield from range(100)
 
-    aiterator = concurrency.iter_in_thread(iterator(), batch_size=1)
-    values = [value async for value in aiterator]
+    values = await asyncstdlib.list(
+        concurrency.iter_in_thread(iterator(), batch_size=1)
+    )
     assert values == list(range(100))
 
 
@@ -68,6 +70,7 @@ async def test_large_batch_size() -> None:
     def iterator() -> Iterator[int]:
         yield 1
 
-    aiterator = concurrency.iter_in_thread(iterator(), batch_size=1000000)
-    values = [value async for value in aiterator]
+    values = await asyncstdlib.list(
+        concurrency.iter_in_thread(iterator(), batch_size=1000000)
+    )
     assert values == [1]
