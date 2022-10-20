@@ -23,6 +23,7 @@ import unittest
 
 import anyio
 import apsw
+import asyncstdlib
 import dbver
 import libtorrent as lt
 
@@ -90,7 +91,7 @@ class TerminateTest(unittest.IsolatedAsyncioTestCase):
             with dbver.null_pool(self.conn_factory)() as conn:
                 yield from resume_lib.iter_resume_data_from_db(conn)
 
-        return await concurrency.alist(concurrency.iter_in_thread(inner()))
+        return await asyncstdlib.list(concurrency.iter_in_thread(inner()))
 
     async def test_mid_download(self) -> None:
         atp = self.torrent.atp()

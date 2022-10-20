@@ -22,6 +22,7 @@ import pathlib
 import tempfile
 import unittest
 
+import asyncstdlib
 import libtorrent as lt
 
 from tvaf import concurrency
@@ -63,7 +64,7 @@ class LifespanTest(TemporaryDirectoryTestCase):
         # this technically breaks isolation (non-isolated config listens on
         # default ports and will bootstrap dht, etc), but it must be tested!
         await asyncio.to_thread(services.CONFIG_PATH.unlink)
-        contents = await concurrency.alist(
+        contents = await asyncstdlib.list(
             concurrency.iter_in_thread(pathlib.Path().iterdir())
         )
         self.assertEqual(contents, [])
@@ -104,7 +105,7 @@ class LifespanTest(TemporaryDirectoryTestCase):
             with services.resume_db_pool() as conn:
                 yield from resume_lib.iter_resume_data_from_db(conn)
 
-        resume_data = await concurrency.alist(
+        resume_data = await asyncstdlib.list(
             concurrency.iter_in_thread(get_resume_data())
         )
 

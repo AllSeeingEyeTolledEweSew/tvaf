@@ -259,11 +259,6 @@ def acached_property(func: Callable[[Any], Awaitable[_T]]) -> _AcachedProperty[_
     return _AcachedProperty(func)
 
 
-async def alist(it: AsyncIterator[_T]) -> list[_T]:
-    """Returns an AsyncIterator as a list."""
-    return [item async for item in it]
-
-
 class _MissingType:
     pass
 
