@@ -38,6 +38,7 @@ repos:
     - id: mypy
       additional_dependencies:
         # keep this part in sync with setup.cfg
+        - asyncstdlib
         - apsw>=3.35.0
         - types-cachetools>=2.0.0,<6
         - fastapi>=0.78.0,<0.79

@@ -28,6 +28,7 @@ from typing import Protocol
 import warnings
 
 import anyio
+import asyncstdlib
 import libtorrent as lt
 
 from tvaf._internal import pop_alerts as pop_alerts_lib
@@ -200,7 +201,10 @@ class AlertDriver:
                 stack.enter_context(self._use_alert_mask(alert_mask))
                 tasks = await stack.enter_async_context(anyio.create_task_group())
                 tasks.start_soon(self._share_fate)
-                yield sub.iterator()
+                async_iter = await stack.enter_async_context(
+                    asyncstdlib.scoped_iter(sub.iterator())
+                )
+                yield async_iter
                 tasks.cancel_scope.cancel()
         finally:
             sub.maybe_release()

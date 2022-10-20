@@ -18,6 +18,7 @@ import contextlib
 import functools
 
 import anyio
+import asyncstdlib
 import libtorrent as lt
 
 from tvaf import ltpy
@@ -62,5 +63,6 @@ async def wait_pieces(
 
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(poll)
-        yield iterator()
+        async with asyncstdlib.scoped_iter(iterator()) as async_iter:
+            yield async_iter
         tasks.cancel_scope.cancel()
