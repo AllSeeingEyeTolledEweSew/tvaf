@@ -9,7 +9,6 @@ concurrency:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
     strategy:
       # Our goal is to run torture tests for 15 minutes, to test concurrency
       # issues. We maximize the maximum github free plan concurrency limits
@@ -52,7 +51,6 @@ jobs:
       - uses: codecov/codecov-action@v3
   pre-commit:
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
     strategy:
       matrix:
         py: [ "3.9", "3.10" ]
